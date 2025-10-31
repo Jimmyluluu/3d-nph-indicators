@@ -154,11 +154,8 @@ def visualize_ventricle_distance(left_ventricle, right_ventricle,
     # 建立圖表
     fig = go.Figure()
 
-    # 下採樣以提升效能
-    step = 2
-
-    # 左腦室 - 轉換到物理空間
-    left_coords_voxel = np.argwhere(left_data[::step, ::step, ::step] > 0) * step
+    # 左腦室 - 轉換到物理空間（完整點雲，不下採樣）
+    left_coords_voxel = np.argwhere(left_data > 0)
     # 轉換到物理座標
     left_coords_homogeneous = np.column_stack([left_coords_voxel, np.ones(len(left_coords_voxel))])
     left_coords_physical = (left_ventricle.affine @ left_coords_homogeneous.T).T[:, :3]
@@ -169,16 +166,16 @@ def visualize_ventricle_distance(left_ventricle, right_ventricle,
         z=left_coords_physical[:, 2],
         mode='markers',
         marker=dict(
-            size=1.5,
+            size=1,
             color='blue',
-            opacity=0.3
+            opacity=0.5
         ),
         name='Left Ventricle',
         showlegend=True
     ))
 
-    # 右腦室 - 轉換到物理空間
-    right_coords_voxel = np.argwhere(right_data[::step, ::step, ::step] > 0) * step
+    # 右腦室 - 轉換到物理空間（完整點雲，不下採樣）
+    right_coords_voxel = np.argwhere(right_data > 0)
     # 轉換到物理座標
     right_coords_homogeneous = np.column_stack([right_coords_voxel, np.ones(len(right_coords_voxel))])
     right_coords_physical = (right_ventricle.affine @ right_coords_homogeneous.T).T[:, :3]
@@ -189,9 +186,9 @@ def visualize_ventricle_distance(left_ventricle, right_ventricle,
         z=right_coords_physical[:, 2],
         mode='markers',
         marker=dict(
-            size=1.5,
+            size=1,
             color='red',
-            opacity=0.3
+            opacity=0.5
         ),
         name='Right Ventricle',
         showlegend=True
