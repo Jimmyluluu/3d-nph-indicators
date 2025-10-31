@@ -7,7 +7,7 @@
 import numpy as np
 import nibabel as nib
 import plotly.graph_objects as go
-from reorient import get_image_data, get_voxel_size
+from model.reorient import get_image_data, get_voxel_size
 
 
 def load_ventricle_pair(left_path, right_path, verbose=True):

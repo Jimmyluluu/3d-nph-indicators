@@ -5,7 +5,7 @@
 """
 
 from pathlib import Path
-from ventricle_analysis import (
+from model.ventricle_analysis import (
     load_ventricle_pair,
     calculate_centroid_distance,
     visualize_ventricle_distance,
