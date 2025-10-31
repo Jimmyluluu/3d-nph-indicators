@@ -7,6 +7,7 @@
 import numpy as np
 import nibabel as nib
 import plotly.graph_objects as go
+from skimage import measure
 from model.reorient import get_image_data, get_voxel_size
 
 
@@ -127,7 +128,7 @@ def calculate_centroid_distance(left_ventricle, right_ventricle):
 def visualize_ventricle_distance(left_ventricle, right_ventricle,
                                   left_centroid, right_centroid,
                                   distance_mm, output_path="ventricle_distance.png",
-                                  show_plot=True):
+                                  show_plot=True, original_path=None):
     """
     視覺化左右腦室和質心距離（在物理空間中）
 
@@ -139,6 +140,7 @@ def visualize_ventricle_distance(left_ventricle, right_ventricle,
         distance_mm: 距離（mm）
         output_path: 輸出圖片路徑
         show_plot: 是否顯示互動式圖表
+        original_path: 原始腦部影像路徑（可選）
 
     Returns:
         plotly figure物件
@@ -148,15 +150,56 @@ def visualize_ventricle_distance(left_ventricle, right_ventricle,
     right_data = get_image_data(right_ventricle)
 
     print(f"\n準備視覺化...")
-    print(f"左腦室資料範圍: {left_data.min()} 到 {left_data.max()}")
-    print(f"右腦室資料範圍: {right_data.min()} 到 {right_data.max()}")
+
+    # 載入原始腦部影像（如果提供）
+    original_img = None
+    original_data = None
+    if original_path:
+        print(f"載入原始腦部影像: {original_path}")
+        original_img = nib.load(original_path)
+        original_data = get_image_data(original_img)
 
     # 建立圖表
     fig = go.Figure()
 
+    # 如果有原始影像，先繪製（作為背景）- 使用表面網格
+    if original_data is not None:
+        try:
+            # 使用較低的閾值以顯示腦組織
+            threshold = np.percentile(original_data[original_data > 0], 30)
+
+            # 使用 marching cubes 提取表面（在體素空間）
+            verts, faces, normals, values = measure.marching_cubes(original_data, level=threshold)
+
+            # 將頂點從體素座標轉換到物理座標
+            verts_homogeneous = np.column_stack([verts, np.ones(len(verts))])
+            verts_physical = (original_img.affine @ verts_homogeneous.T).T[:, :3]
+
+            # 使用 Mesh3d 繪製表面（降低透明度讓黃線更明顯）
+            fig.add_trace(go.Mesh3d(
+                x=verts_physical[:, 0],
+                y=verts_physical[:, 1],
+                z=verts_physical[:, 2],
+                i=faces[:, 0],
+                j=faces[:, 1],
+                k=faces[:, 2],
+                color='lightgray',
+                opacity=0.15,  # 降低透明度
+                name='Brain Surface',
+                showlegend=True,
+                lighting=dict(
+                    ambient=0.6,
+                    diffuse=0.8,
+                    specular=0.2
+                ),
+                flatshading=False
+            ))
+            print(f"✓ 腦部表面已加入")
+        except Exception as e:
+            print(f"警告：無法提取腦部表面 - {str(e)}")
+
     # 左腦室 - 轉換到物理空間（完整點雲，不下採樣）
     left_coords_voxel = np.argwhere(left_data > 0)
-    # 轉換到物理座標
     left_coords_homogeneous = np.column_stack([left_coords_voxel, np.ones(len(left_coords_voxel))])
     left_coords_physical = (left_ventricle.affine @ left_coords_homogeneous.T).T[:, :3]
 
@@ -168,7 +211,7 @@ def visualize_ventricle_distance(left_ventricle, right_ventricle,
         marker=dict(
             size=1,
             color='blue',
-            opacity=0.5
+            opacity=0.3  # 降低透明度
         ),
         name='Left Ventricle',
         showlegend=True
@@ -176,7 +219,6 @@ def visualize_ventricle_distance(left_ventricle, right_ventricle,
 
     # 右腦室 - 轉換到物理空間（完整點雲，不下採樣）
     right_coords_voxel = np.argwhere(right_data > 0)
-    # 轉換到物理座標
     right_coords_homogeneous = np.column_stack([right_coords_voxel, np.ones(len(right_coords_voxel))])
     right_coords_physical = (right_ventricle.affine @ right_coords_homogeneous.T).T[:, :3]
 
@@ -188,7 +230,7 @@ def visualize_ventricle_distance(left_ventricle, right_ventricle,
         marker=dict(
             size=1,
             color='red',
-            opacity=0.5
+            opacity=0.3  # 降低透明度
         ),
         name='Right Ventricle',
         showlegend=True
@@ -228,19 +270,19 @@ def visualize_ventricle_distance(left_ventricle, right_ventricle,
         showlegend=True
     ))
 
-    # 連接線（黃色）
+    # 連接線（更明顯的金黃色）
     fig.add_trace(go.Scatter3d(
         x=[left_centroid[0], right_centroid[0]],
         y=[left_centroid[1], right_centroid[1]],
         z=[left_centroid[2], right_centroid[2]],
         mode='lines+text',
         line=dict(
-            color='yellow',
-            width=5
+            color='gold',  # 改用更明顯的金色
+            width=10  # 加粗線條
         ),
         text=['', f'{distance_mm:.2f} mm'],
         textposition='middle center',
-        textfont=dict(size=14, color='yellow'),
+        textfont=dict(size=16, color='gold'),  # 加大文字
         name=f'Distance: {distance_mm:.2f} mm',
         showlegend=True
     ))
@@ -304,9 +346,10 @@ if __name__ == "__main__":
     print("腦室質心距離分析")
     print("=" * 70)
 
-    # 指定左右腦室檔案
+    # 指定檔案路徑
     left_path = "000016209E/Ventricle_L.nii.gz"
     right_path = "000016209E/Ventricle_R.nii.gz"
+    original_path = "000016209E/original.nii.gz"
 
     # 載入左右腦室（使用原始座標，不重新定向）
     print("\n步驟 1: 載入左右腦室影像")
@@ -331,5 +374,6 @@ if __name__ == "__main__":
         left_centroid, right_centroid,
         distance_mm,
         output_path="ventricle_distance.png",
-        show_plot=False  # 設為 True 會開啟瀏覽器顯示互動圖
+        show_plot=False,  # 設為 True 會開啟瀏覽器顯示互動圖
+        original_path=original_path  # 加入原始腦部影像
     )

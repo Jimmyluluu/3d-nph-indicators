@@ -22,9 +22,10 @@ def main():
     # 設定資料目錄
     data_dir = "000016209E"
 
-    # 左右腦室檔案路徑
+    # 檔案路徑
     left_ventricle_path = f"{data_dir}/Ventricle_L.nii.gz"
     right_ventricle_path = f"{data_dir}/Ventricle_R.nii.gz"
+    original_brain_path = f"{data_dir}/original.nii.gz"
 
     # 步驟 1: 載入左右腦室（使用原始座標系統）
     print("\n步驟 1: 載入左右腦室影像")
@@ -59,7 +60,8 @@ def main():
         left_centroid, right_centroid,
         distance_mm,
         output_path=str(output_image),
-        show_plot=False  # 設為 True 會在瀏覽器開啟互動圖表
+        show_plot=False,  # 設為 True 會在瀏覽器開啟互動圖表
+        original_path=original_brain_path  # 加入原始腦部影像
     )
 
     output_html = output_image.with_suffix('.html')
