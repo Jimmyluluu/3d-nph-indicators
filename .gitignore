@@ -247,4 +247,10 @@ $RECYCLE.BIN/
 
 # Windows shortcuts
 *.lnk
+
+### Project specific ###
+# Data directories
 000016209E
+
+# Result files
+result/

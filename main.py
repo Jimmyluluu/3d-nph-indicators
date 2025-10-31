@@ -1,158 +1,75 @@
 #!/usr/bin/env python3
 """
-腦部影像重新定向工具
-提供函數來處理3D腦部影像
+3D NPH Indicators - 主程式
+正常壓力型水腦症（NPH）3D影像指標計算工具
 """
 
-import nibabel as nib
 from pathlib import Path
+from ventricle_analysis import (
+    load_ventricle_pair,
+    calculate_centroid_distance,
+    visualize_ventricle_distance,
+    print_measurement_summary
+)
 
 
-def reorient_image(image_path: str, verbose: bool = True):
-    """
-    將影像重新定向到標準RAS+方向（不儲存檔案）
-
-    Args:
-        image_path: 影像檔案路徑
-        verbose: 是否顯示處理資訊
-
-    Returns:
-        tuple: (重新定向後的影像物件, 原始方向, 新方向)
-    """
-    # 讀取影像
-    img = nib.load(image_path)
-
-    # 獲取原始方向
-    orig_ornt = nib.aff2axcodes(img.affine)
-
-    # 轉換到canonical方向（最接近RAS+）
-    canonical_img = nib.as_closest_canonical(img)
-
-    # 獲取新方向
-    new_ornt = nib.aff2axcodes(canonical_img.affine)
-
-    if verbose:
-        print(f"檔案: {Path(image_path).name}")
-        print(f"影像形狀: {img.shape}")
-        print(f"資料範圍: {img.get_fdata().min():.2f} 到 {img.get_fdata().max():.2f}")
-        print(f"原始方向: {orig_ornt}")
-        print(f"新方向: {new_ornt}")
-        if orig_ornt == new_ornt:
-            print("已經是標準方向")
-        else:
-            print("成功重新定向到標準方向")
-
-    return canonical_img, orig_ornt, new_ornt
-
-
-def get_image_data(img):
-    """
-    從影像物件取得numpy陣列資料
-
-    Args:
-        img: nibabel影像物件
-
-    Returns:
-        numpy陣列
-    """
-    if hasattr(img, 'get_fdata'):
-        return img.get_fdata()
-    else:
-        return img
-
-
-def save_image(img, output_path: str):
-    """
-    儲存影像到檔案
-
-    Args:
-        img: nibabel影像物件
-        output_path: 輸出檔案路徑
-    """
-    nib.save(img, output_path)
-    print(f"已儲存: {output_path}")
-
-
-def process_all_images(input_dir: str, output_dir: str = None, save_files: bool = False):
-    """
-    批次處理目錄中所有的 .nii.gz 檔案
-
-    Args:
-        input_dir: 輸入目錄路徑
-        output_dir: 輸出目錄路徑（如果為None且save_files=True，則自動建立）
-        save_files: 是否儲存重新定向後的檔案
-
-    Returns:
-        dict: {檔案名稱: (重新定向影像, 原始方向, 新方向)}
-    """
-    input_path = Path(input_dir)
-
-    # 如果需要儲存且沒有指定輸出目錄，則建立一個新的
-    if save_files and output_dir is None:
-        output_dir = str(input_path) + "_reoriented"
-
-    if save_files:
-        output_path = Path(output_dir)
-        output_path.mkdir(exist_ok=True)
-        print(f"輸出目錄: {output_dir}\n")
-
-    # 找出所有 .nii.gz 檔案
-    nii_files = sorted(input_path.glob("*.nii.gz"))
-
-    if not nii_files:
-        print(f"在 {input_dir} 中沒有找到 .nii.gz 檔案")
-        return {}
-
-    print(f"找到 {len(nii_files)} 個影像檔案")
+def main():
+    """主程式：計算左右腦室質心距離"""
+    print("=" * 70)
+    print("3D NPH 指標計算 - 腦室質心距離分析")
     print("=" * 70)
 
-    results = {}
+    # 設定資料目錄
+    data_dir = "000016209E"
 
-    # 處理每個檔案
-    for i, nii_file in enumerate(nii_files, 1):
-        print(f"\n[{i}/{len(nii_files)}] 處理: {nii_file.name}")
-        print("-" * 70)
+    # 左右腦室檔案路徑
+    left_ventricle_path = f"{data_dir}/Ventricle_L.nii.gz"
+    right_ventricle_path = f"{data_dir}/Ventricle_R.nii.gz"
 
-        # 重新定向
-        reoriented_img, orig_ornt, new_ornt = reorient_image(str(nii_file), verbose=True)
+    # 步驟 1: 載入左右腦室（使用原始座標系統）
+    print("\n步驟 1: 載入左右腦室影像")
+    print("-" * 70)
+    left_vent, right_vent = load_ventricle_pair(
+        left_ventricle_path, right_ventricle_path, verbose=True
+    )
 
-        # 儲存結果
-        results[nii_file.name] = (reoriented_img, orig_ornt, new_ornt)
+    # 步驟 2: 計算質心距離
+    print("\n步驟 2: 計算左右腦室質心距離")
+    print("-" * 70)
+    distance_mm, left_centroid, right_centroid, voxel_size = calculate_centroid_distance(
+        left_vent, right_vent
+    )
 
-        # 如果需要儲存檔案
-        if save_files:
-            output_file = output_path / nii_file.name
-            save_image(reoriented_img, str(output_file))
+    # 步驟 3: 顯示結果
+    print_measurement_summary(distance_mm, left_centroid, right_centroid, voxel_size)
+
+    # 步驟 4: 產生視覺化圖片
+    print("\n步驟 3: 產生3D視覺化圖片")
+    print("-" * 70)
+
+    # 建立 result 資料夾
+    result_dir = Path("result")
+    result_dir.mkdir(exist_ok=True)
+
+    # 設定輸出檔案路徑
+    output_image = result_dir / f"{data_dir}_ventricle_distance.png"
+
+    visualize_ventricle_distance(
+        left_vent, right_vent,
+        left_centroid, right_centroid,
+        distance_mm,
+        output_path=str(output_image),
+        show_plot=False  # 設為 True 會在瀏覽器開啟互動圖表
+    )
+
+    output_html = output_image.with_suffix('.html')
 
     print("\n" + "=" * 70)
-    print(f"批次處理完成！共處理 {len(results)} 個檔案")
+    print("分析完成！")
+    print(f"結果圖片: {output_image}")
+    print(f"互動式HTML: {output_html}")
+    print("=" * 70)
 
-    return results
-
-
-# ============================================
-# 使用範例
-# ============================================
 
 if __name__ == "__main__":
-    print("=" * 70)
-    print("批次處理所有腦部影像")
-    print("=" * 70)
-
-    # 指定包含影像的目錄
-    input_directory = "000016209E"
-
-    # 批次處理所有影像（不儲存）
-    results = process_all_images(input_directory, save_files=False)
-
-    # 顯示摘要
-    print("\n" + "=" * 70)
-    print("處理結果摘要:")
-    print("=" * 70)
-    for filename, (img, orig_ornt, new_ornt) in results.items():
-        data = get_image_data(img)
-        print(f"{filename}:")
-        print(f"  形狀: {data.shape}, 方向: {orig_ornt} -> {new_ornt}")
-
-    # 如果需要儲存，可以取消下面的註解
-    # results = process_all_images(input_directory, save_files=True)
+    main()

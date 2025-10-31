@@ -1,0 +1,338 @@
+#!/usr/bin/env python3
+"""
+腦室分析工具
+計算腦室質心距離並進行3D視覺化
+"""
+
+import numpy as np
+import nibabel as nib
+import plotly.graph_objects as go
+from reorient import get_image_data, get_voxel_size
+
+
+def load_ventricle_pair(left_path, right_path, verbose=True):
+    """
+    載入左右腦室影像並驗證座標系統一致性
+
+    Args:
+        left_path: 左腦室檔案路徑
+        right_path: 右腦室檔案路徑
+        verbose: 是否顯示驗證資訊
+
+    Returns:
+        tuple: (左腦室影像, 右腦室影像)
+
+    Raises:
+        ValueError: 如果座標系統不一致
+    """
+    # 載入影像
+    left_img = nib.load(left_path)
+    right_img = nib.load(right_path)
+
+    if verbose:
+        print(f"\n載入左腦室: {left_path}")
+        print(f"  影像形狀: {left_img.shape}")
+        print(f"  方向: {nib.aff2axcodes(left_img.affine)}")
+        print(f"  體素間距: {left_img.header.get_zooms()[:3]}")
+
+        print(f"\n載入右腦室: {right_path}")
+        print(f"  影像形狀: {right_img.shape}")
+        print(f"  方向: {nib.aff2axcodes(right_img.affine)}")
+        print(f"  體素間距: {right_img.header.get_zooms()[:3]}")
+
+    # 檢查體素間距是否相同
+    left_voxel = left_img.header.get_zooms()[:3]
+    right_voxel = right_img.header.get_zooms()[:3]
+
+    if not np.allclose(left_voxel, right_voxel):
+        raise ValueError(f"體素間距不一致！左: {left_voxel}, 右: {right_voxel}")
+
+    if verbose:
+        if left_img.shape != right_img.shape:
+            print("\n⚠ 注意：影像形狀不同（可能經過裁剪）")
+            print("  將使用 affine 矩陣轉換到物理空間進行計算")
+        else:
+            print("\n✓ 影像形狀相同")
+
+        print("✓ 座標系統驗證通過！將在物理空間中計算。")
+
+    return left_img, right_img
+
+
+def calculate_centroid_3d(image, return_physical=True):
+    """
+    計算3D影像的質心（重心）座標
+
+    Args:
+        image: nibabel影像物件
+        return_physical: 是否返回物理座標（世界座標），否則返回體素座標
+
+    Returns:
+        tuple: (x, y, z) 質心座標
+            - 如果 return_physical=True: 物理座標（mm）
+            - 如果 return_physical=False: 體素座標
+    """
+    # 取得資料
+    data = get_image_data(image)
+
+    # 找出所有非零體素的座標
+    coords = np.argwhere(data > 0)
+
+    if len(coords) == 0:
+        raise ValueError("影像中沒有非零體素！")
+
+    # 取得對應的強度值
+    values = data[coords[:, 0], coords[:, 1], coords[:, 2]]
+
+    # 計算加權質心（使用強度值作為權重）- 體素座標
+    centroid_voxel = np.average(coords, axis=0, weights=values)
+
+    if return_physical and hasattr(image, 'affine'):
+        # 轉換到物理空間（世界座標）
+        # 添加齊次座標 (x, y, z, 1)
+        centroid_homogeneous = np.append(centroid_voxel, 1)
+        # 使用 affine 矩陣轉換
+        centroid_physical = image.affine @ centroid_homogeneous
+        # 返回 (x, y, z)，去掉齊次座標
+        return tuple(centroid_physical[:3])
+    else:
+        return tuple(centroid_voxel)
+
+
+def calculate_centroid_distance(left_ventricle, right_ventricle):
+    """
+    計算左右腦室質心之間的3D歐式距離（在物理空間中）
+
+    Args:
+        left_ventricle: 左腦室影像物件
+        right_ventricle: 右腦室影像物件
+
+    Returns:
+        tuple: (距離(mm), 左質心座標(mm), 右質心座標(mm), 體素間距)
+    """
+    # 計算兩個質心的物理座標（世界座標，單位：mm）
+    left_centroid_physical = calculate_centroid_3d(left_ventricle, return_physical=True)
+    right_centroid_physical = calculate_centroid_3d(right_ventricle, return_physical=True)
+
+    # 取得體素間距
+    voxel_size = get_voxel_size(left_ventricle)
+
+    # 計算物理空間中的歐式距離（mm）
+    diff = np.array(left_centroid_physical) - np.array(right_centroid_physical)
+    distance_mm = np.linalg.norm(diff)
+
+    return distance_mm, left_centroid_physical, right_centroid_physical, voxel_size
+
+
+def visualize_ventricle_distance(left_ventricle, right_ventricle,
+                                  left_centroid, right_centroid,
+                                  distance_mm, output_path="ventricle_distance.png",
+                                  show_plot=True):
+    """
+    視覺化左右腦室和質心距離（在物理空間中）
+
+    Args:
+        left_ventricle: 左腦室影像物件
+        right_ventricle: 右腦室影像物件
+        left_centroid: 左腦室質心物理座標（mm）
+        right_centroid: 右腦室質心物理座標（mm）
+        distance_mm: 距離（mm）
+        output_path: 輸出圖片路徑
+        show_plot: 是否顯示互動式圖表
+
+    Returns:
+        plotly figure物件
+    """
+    # 取得資料
+    left_data = get_image_data(left_ventricle)
+    right_data = get_image_data(right_ventricle)
+
+    print(f"\n準備視覺化...")
+    print(f"左腦室資料範圍: {left_data.min()} 到 {left_data.max()}")
+    print(f"右腦室資料範圍: {right_data.min()} 到 {right_data.max()}")
+
+    # 建立圖表
+    fig = go.Figure()
+
+    # 下採樣以提升效能
+    step = 2
+
+    # 左腦室 - 轉換到物理空間
+    left_coords_voxel = np.argwhere(left_data[::step, ::step, ::step] > 0) * step
+    # 轉換到物理座標
+    left_coords_homogeneous = np.column_stack([left_coords_voxel, np.ones(len(left_coords_voxel))])
+    left_coords_physical = (left_ventricle.affine @ left_coords_homogeneous.T).T[:, :3]
+
+    fig.add_trace(go.Scatter3d(
+        x=left_coords_physical[:, 0],
+        y=left_coords_physical[:, 1],
+        z=left_coords_physical[:, 2],
+        mode='markers',
+        marker=dict(
+            size=1.5,
+            color='blue',
+            opacity=0.3
+        ),
+        name='Left Ventricle',
+        showlegend=True
+    ))
+
+    # 右腦室 - 轉換到物理空間
+    right_coords_voxel = np.argwhere(right_data[::step, ::step, ::step] > 0) * step
+    # 轉換到物理座標
+    right_coords_homogeneous = np.column_stack([right_coords_voxel, np.ones(len(right_coords_voxel))])
+    right_coords_physical = (right_ventricle.affine @ right_coords_homogeneous.T).T[:, :3]
+
+    fig.add_trace(go.Scatter3d(
+        x=right_coords_physical[:, 0],
+        y=right_coords_physical[:, 1],
+        z=right_coords_physical[:, 2],
+        mode='markers',
+        marker=dict(
+            size=1.5,
+            color='red',
+            opacity=0.3
+        ),
+        name='Right Ventricle',
+        showlegend=True
+    ))
+
+    # 左腦室質心（大藍點）
+    fig.add_trace(go.Scatter3d(
+        x=[left_centroid[0]],
+        y=[left_centroid[1]],
+        z=[left_centroid[2]],
+        mode='markers+text',
+        marker=dict(
+            size=10,
+            color='darkblue',
+            symbol='diamond'
+        ),
+        text=['Left Centroid'],
+        textposition='top center',
+        name='Left Centroid',
+        showlegend=True
+    ))
+
+    # 右腦室質心（大紅點）
+    fig.add_trace(go.Scatter3d(
+        x=[right_centroid[0]],
+        y=[right_centroid[1]],
+        z=[right_centroid[2]],
+        mode='markers+text',
+        marker=dict(
+            size=10,
+            color='darkred',
+            symbol='diamond'
+        ),
+        text=['Right Centroid'],
+        textposition='top center',
+        name='Right Centroid',
+        showlegend=True
+    ))
+
+    # 連接線（黃色）
+    fig.add_trace(go.Scatter3d(
+        x=[left_centroid[0], right_centroid[0]],
+        y=[left_centroid[1], right_centroid[1]],
+        z=[left_centroid[2], right_centroid[2]],
+        mode='lines+text',
+        line=dict(
+            color='yellow',
+            width=5
+        ),
+        text=['', f'{distance_mm:.2f} mm'],
+        textposition='middle center',
+        textfont=dict(size=14, color='yellow'),
+        name=f'Distance: {distance_mm:.2f} mm',
+        showlegend=True
+    ))
+
+    # 更新版面配置
+    fig.update_layout(
+        title=f'Ventricle Centroid Distance: {distance_mm:.2f} mm',
+        scene=dict(
+            xaxis_title='X (mm)',
+            yaxis_title='Y (mm)',
+            zaxis_title='Z (mm)',
+            aspectmode='data',
+            camera=dict(
+                eye=dict(x=1.5, y=1.5, z=1.5)
+            )
+        ),
+        width=1200,
+        height=900,
+        showlegend=True
+    )
+
+    # 儲存圖片
+    print(f"\n儲存圖片到: {output_path}")
+    fig.write_image(output_path)
+    print(f"圖片已儲存！")
+
+    # 同時儲存 HTML（可互動）
+    html_path = output_path.replace('.png', '.html')
+    fig.write_html(html_path)
+    print(f"互動式HTML已儲存到: {html_path}")
+
+    # 顯示圖表
+    if show_plot:
+        fig.show()
+
+    return fig
+
+
+def print_measurement_summary(distance_mm, left_centroid, right_centroid, voxel_size):
+    """
+    格式化輸出測量結果
+
+    Args:
+        distance_mm: 距離（mm）
+        left_centroid: 左質心物理座標（mm）
+        right_centroid: 右質心物理座標（mm）
+        voxel_size: 體素間距
+    """
+    print("\n" + "=" * 70)
+    print("腦室質心距離測量結果")
+    print("=" * 70)
+    print(f"\n左腦室質心座標 (mm): ({left_centroid[0]:.2f}, {left_centroid[1]:.2f}, {left_centroid[2]:.2f})")
+    print(f"右腦室質心座標 (mm): ({right_centroid[0]:.2f}, {right_centroid[1]:.2f}, {right_centroid[2]:.2f})")
+    print(f"\n體素間距 (mm): {voxel_size[0]:.4f} x {voxel_size[1]:.4f} x {voxel_size[2]:.2f}")
+    print(f"\n左右腦室質心距離: {distance_mm:.2f} mm")
+    print("=" * 70)
+
+
+if __name__ == "__main__":
+    print("=" * 70)
+    print("腦室質心距離分析")
+    print("=" * 70)
+
+    # 指定左右腦室檔案
+    left_path = "000016209E/Ventricle_L.nii.gz"
+    right_path = "000016209E/Ventricle_R.nii.gz"
+
+    # 載入左右腦室（使用原始座標，不重新定向）
+    print("\n步驟 1: 載入左右腦室影像")
+    print("-" * 70)
+    left_vent, right_vent = load_ventricle_pair(left_path, right_path, verbose=True)
+
+    # 計算質心距離
+    print("\n步驟 2: 計算質心距離")
+    print("-" * 70)
+    distance_mm, left_centroid, right_centroid, voxel_size = calculate_centroid_distance(
+        left_vent, right_vent
+    )
+
+    # 顯示結果
+    print_measurement_summary(distance_mm, left_centroid, right_centroid, voxel_size)
+
+    # 視覺化並儲存
+    print("\n步驟 3: 產生3D視覺化")
+    print("-" * 70)
+    visualize_ventricle_distance(
+        left_vent, right_vent,
+        left_centroid, right_centroid,
+        distance_mm,
+        output_path="ventricle_distance.png",
+        show_plot=False  # 設為 True 會開啟瀏覽器顯示互動圖
+    )
