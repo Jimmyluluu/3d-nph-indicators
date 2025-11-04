@@ -6,10 +6,13 @@
 
 from pathlib import Path
 import nibabel as nib
-from model.ventricle_analysis import (
+from model.calculation import (
     load_ventricle_pair,
     calculate_centroid_distance,
     calculate_cranial_width,
+    calculate_ventricle_to_cranial_ratio
+)
+from model.visualization import (
     visualize_ventricle_distance,
     print_measurement_summary
 )
@@ -43,9 +46,6 @@ def main():
         left_vent, right_vent
     )
 
-    # 步驟 3: 顯示結果
-    print_measurement_summary(distance_mm, left_centroid, right_centroid, voxel_size)
-
     # 步驟 3: 計算顱內橫向最大寬度
     print("\n步驟 3: 計算顱內橫向最大寬度")
     print("-" * 70)
@@ -58,8 +58,18 @@ def main():
     print(f"左端點座標 (mm): ({left_point[0]:.2f}, {left_point[1]:.2f}, {left_point[2]:.2f})")
     print(f"右端點座標 (mm): ({right_point[0]:.2f}, {right_point[1]:.2f}, {right_point[2]:.2f})")
 
-    # 步驟 4: 產生視覺化圖片
-    print("\n步驟 4: 產生3D視覺化圖片")
+    # 步驟 4: 計算腦室距離與顱內寬度的比值
+    print("\n步驟 4: 計算腦室距離與顱內寬度的比值")
+    print("-" * 70)
+    ratio = calculate_ventricle_to_cranial_ratio(distance_mm, cranial_width)
+    print(f"腦室距離/顱內寬度比值: {ratio:.4f} ({ratio*100:.2f}%)")
+
+    # 顯示完整測量摘要
+    print_measurement_summary(distance_mm, left_centroid, right_centroid, voxel_size,
+                             cranial_width_mm=cranial_width, ratio=ratio)
+
+    # 步驟 5: 產生視覺化圖片
+    print("\n步驟 5: 產生3D視覺化圖片")
     print("-" * 70)
 
     # 建立 result 資料夾
@@ -79,7 +89,8 @@ def main():
         output_path=str(output_image),
         show_plot=False,  # 設為 True 會在瀏覽器開啟互動圖表
         original_path=original_brain_path,  # 加入原始腦部影像
-        cranial_width_data=cranial_width_data  # 加入顱內寬度資料
+        cranial_width_data=cranial_width_data,  # 加入顱內寬度資料
+        ratio=ratio  # 加入腦室距離/顱內寬度比值
     )
 
     output_html = output_image.with_suffix('.html')
