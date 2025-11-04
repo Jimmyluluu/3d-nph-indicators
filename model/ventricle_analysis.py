@@ -125,10 +125,79 @@ def calculate_centroid_distance(left_ventricle, right_ventricle):
     return distance_mm, left_centroid_physical, right_centroid_physical, voxel_size
 
 
+def calculate_cranial_width(original_img):
+    """
+    計算顱內橫向最大寬度（在每個切面上計算，取最大值）
+
+    Args:
+        original_img: 原始腦部影像物件
+
+    Returns:
+        tuple: (最大寬度(mm), 左端點座標(mm), 右端點座標(mm), 切面編號)
+    """
+    # 取得資料
+    data = get_image_data(original_img)
+    voxel_size = get_voxel_size(original_img)
+
+    max_width = 0
+    max_slice_idx = 0
+    left_point_voxel = None
+    right_point_voxel = None
+
+    print(f"\n計算顱內橫向最大寬度...")
+
+    # 遍歷每個 Z 切面
+    for z in range(data.shape[2]):
+        slice_data = data[:, :, z]
+
+        # 找到該切面的所有非零點
+        nonzero_points = np.argwhere(slice_data > 0)
+
+        if len(nonzero_points) == 0:
+            continue
+
+        # 找到 X 座標的最小值和最大值
+        x_coords = nonzero_points[:, 0]
+        x_min_idx = np.argmin(x_coords)
+        x_max_idx = np.argmax(x_coords)
+
+        x_min = x_coords[x_min_idx]
+        x_max = x_coords[x_max_idx]
+
+        # 計算該切面的寬度（體素單位）
+        width_voxels = x_max - x_min
+
+        # 轉換為物理距離（mm）
+        width_mm = width_voxels * voxel_size[0]
+
+        # 更新最大寬度
+        if width_mm > max_width:
+            max_width = width_mm
+            max_slice_idx = z
+            # 記錄左右端點（體素座標）
+            y_left = nonzero_points[x_min_idx, 1]
+            y_right = nonzero_points[x_max_idx, 1]
+            left_point_voxel = np.array([x_min, y_left, z])
+            right_point_voxel = np.array([x_max, y_right, z])
+
+    # 將左右端點轉換到物理座標
+    if left_point_voxel is not None:
+        left_homogeneous = np.append(left_point_voxel, 1)
+        right_homogeneous = np.append(right_point_voxel, 1)
+
+        left_point_physical = (original_img.affine @ left_homogeneous)[:3]
+        right_point_physical = (original_img.affine @ right_homogeneous)[:3]
+
+        return max_width, tuple(left_point_physical), tuple(right_point_physical), max_slice_idx
+    else:
+        raise ValueError("無法在影像中找到非零體素！")
+
+
 def visualize_ventricle_distance(left_ventricle, right_ventricle,
                                   left_centroid, right_centroid,
                                   distance_mm, output_path="ventricle_distance.png",
-                                  show_plot=True, original_path=None):
+                                  show_plot=True, original_path=None,
+                                  cranial_width_data=None):
     """
     視覺化左右腦室和質心距離（在物理空間中）
 
@@ -141,6 +210,7 @@ def visualize_ventricle_distance(left_ventricle, right_ventricle,
         output_path: 輸出圖片路徑
         show_plot: 是否顯示互動式圖表
         original_path: 原始腦部影像路徑（可選）
+        cranial_width_data: 顱內橫向寬度資料 (寬度, 左端點, 右端點, 切面)（可選）
 
     Returns:
         plotly figure物件
@@ -270,7 +340,7 @@ def visualize_ventricle_distance(left_ventricle, right_ventricle,
         showlegend=True
     ))
 
-    # 連接線（更明顯的金黃色）
+    # 連接線（更明顯的金黃色）- 腦室質心距離
     fig.add_trace(go.Scatter3d(
         x=[left_centroid[0], right_centroid[0]],
         y=[left_centroid[1], right_centroid[1]],
@@ -283,9 +353,29 @@ def visualize_ventricle_distance(left_ventricle, right_ventricle,
         text=['', f'{distance_mm:.2f} mm'],
         textposition='middle center',
         textfont=dict(size=16, color='gold'),  # 加大文字
-        name=f'Distance: {distance_mm:.2f} mm',
+        name=f'Ventricle Distance: {distance_mm:.2f} mm',
         showlegend=True
     ))
+
+    # 顱內橫向最大寬度線（如果有提供）
+    if cranial_width_data is not None:
+        cranial_width, left_point, right_point, slice_idx = cranial_width_data
+
+        fig.add_trace(go.Scatter3d(
+            x=[left_point[0], right_point[0]],
+            y=[left_point[1], right_point[1]],
+            z=[left_point[2], right_point[2]],
+            mode='lines+text',
+            line=dict(
+                color='cyan',  # 青綠色
+                width=10
+            ),
+            text=['', f'{cranial_width:.2f} mm'],
+            textposition='middle center',
+            textfont=dict(size=16, color='cyan'),
+            name=f'Cranial Width: {cranial_width:.2f} mm',
+            showlegend=True
+        ))
 
     # 更新版面配置
     fig.update_layout(

@@ -5,9 +5,11 @@
 """
 
 from pathlib import Path
+import nibabel as nib
 from model.ventricle_analysis import (
     load_ventricle_pair,
     calculate_centroid_distance,
+    calculate_cranial_width,
     visualize_ventricle_distance,
     print_measurement_summary
 )
@@ -44,8 +46,20 @@ def main():
     # 步驟 3: 顯示結果
     print_measurement_summary(distance_mm, left_centroid, right_centroid, voxel_size)
 
+    # 步驟 3: 計算顱內橫向最大寬度
+    print("\n步驟 3: 計算顱內橫向最大寬度")
+    print("-" * 70)
+
+    original_brain = nib.load(original_brain_path)
+    cranial_width, left_point, right_point, slice_idx = calculate_cranial_width(original_brain)
+
+    print(f"\n顱內橫向最大寬度: {cranial_width:.2f} mm")
+    print(f"位置: Z 切面 #{slice_idx}")
+    print(f"左端點座標 (mm): ({left_point[0]:.2f}, {left_point[1]:.2f}, {left_point[2]:.2f})")
+    print(f"右端點座標 (mm): ({right_point[0]:.2f}, {right_point[1]:.2f}, {right_point[2]:.2f})")
+
     # 步驟 4: 產生視覺化圖片
-    print("\n步驟 3: 產生3D視覺化圖片")
+    print("\n步驟 4: 產生3D視覺化圖片")
     print("-" * 70)
 
     # 建立 result 資料夾
@@ -55,13 +69,17 @@ def main():
     # 設定輸出檔案路徑
     output_image = result_dir / f"{data_dir}_ventricle_distance.png"
 
+    # 準備顱內寬度資料
+    cranial_width_data = (cranial_width, left_point, right_point, slice_idx)
+
     visualize_ventricle_distance(
         left_vent, right_vent,
         left_centroid, right_centroid,
         distance_mm,
         output_path=str(output_image),
         show_plot=False,  # 設為 True 會在瀏覽器開啟互動圖表
-        original_path=original_brain_path  # 加入原始腦部影像
+        original_path=original_brain_path,  # 加入原始腦部影像
+        cranial_width_data=cranial_width_data  # 加入顱內寬度資料
     )
 
     output_html = output_image.with_suffix('.html')
