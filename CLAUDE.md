@@ -7,6 +7,31 @@
 
 ---
 
+## 🏗️ 專案架構
+
+```
+3d-nph-indicators/
+├── main.py                      # 統一 CLI 入口
+│
+├── processors/                  # 處理流程邏輯
+│   ├── logger.py               # 日誌記錄
+│   ├── case_processor.py       # 單案例處理
+│   └── batch_processor.py      # 批次處理
+│
+└── model/                       # 純計算和視覺化模組
+    ├── calculation.py          # 計算邏輯(含統一載入函數)
+    ├── visualization.py        # 3D 視覺化
+    ├── reorient.py            # 影像拉正工具
+    └── report_generator.py    # 報表產生
+```
+
+**職責劃分:**
+- `model/` - 純計算、視覺化、報表邏輯 (不含處理流程)
+- `processors/` - 處理流程、日誌、協調邏輯
+- `main.py` - CLI 入口
+
+---
+
 ## 🎯 核心原則
 
 ### 1. 影像載入統一規則
@@ -65,10 +90,32 @@ generate_markdown_report(results, output_path, total_time,
 
 ---
 
-## 📝 開發新指標標準模板
+## 📝 開發新指標標準流程
+
+### 步驟 1: 在 `model/calculation.py` 新增計算函數
 
 ```python
-def process_case_new_metric(data_dir, output_image_path, show_plot=False, verbose=True):
+def calculate_new_metric(left_vent, right_vent, original_img):
+    """
+    計算新指標
+
+    Args:
+        left_vent: 左腦室 (已拉正到 RAS+)
+        right_vent: 右腦室 (已拉正到 RAS+)
+        original_img: 原始影像 (已拉正到 RAS+)
+
+    Returns:
+        dict: 計算結果
+    """
+    # 你的計算邏輯
+    return {'metric_value': 0.123, ...}
+```
+
+### 步驟 2: 在 `processors/case_processor.py` 新增處理函數
+
+```python
+def process_case_new_metric(data_dir, output_image_path,
+                            show_plot=False, verbose=True):
     """處理單一案例 - 新指標"""
     try:
         # 1. 找檔案
@@ -113,6 +160,33 @@ def process_case_new_metric(data_dir, output_image_path, show_plot=False, verbos
         }
 ```
 
+### 步驟 3: 在 `processors/batch_processor.py` 更新
+
+在 `batch_process()` 函數中新增支援:
+
+```python
+# 選擇處理函數
+if indicator_type == "centroid_ratio":
+    process_func = process_case_indicator_ratio
+elif indicator_type == "evan_index":
+    process_func = ...
+elif indicator_type == "new_metric":  # ✅ 新增
+    process_func = process_case_new_metric
+```
+
+### 步驟 4: 更新 CLI 入口
+
+在 `main.py` 的 argparse choices 中新增:
+
+```python
+parser.add_argument(
+    '--type', '-t',
+    choices=['centroid_ratio', 'evan_index', 'new_metric'],  # ✅ 新增
+    default='centroid_ratio',
+    help='指標類型'
+)
+```
+
 ---
 
 ## ⚠️ 常見錯誤
@@ -141,34 +215,44 @@ from model.calculation import load_original_image
 img = load_original_image(path)
 ```
 
-### 錯誤 3: 座標系統不一致
+### 錯誤 3: 在 model/ 中放處理邏輯
 
 ```python
-# ❌ 錯誤
-left_vent = load_ventricle_pair(...)  # 已拉正
-original_img = nib.load(path)  # 沒拉正,座標不一致!
+# ❌ 錯誤:在 model/ 中放日誌、處理流程
+model/batch_handler.py  # 應該放在 processors/
 
-# ✅ 正確
-left_vent = load_ventricle_pair(...)  # 已拉正
-original_img = load_original_image(path)  # 已拉正,座標一致
+# ✅ 正確:model/ 只放純計算和視覺化
+model/calculation.py     # 純計算函數
+model/visualization.py   # 純視覺化函數
 ```
 
 ---
 
 ## 📁 重要函數位置
 
-```text
+```
 model/calculation.py
   ├── load_ventricle_pair()    ✅ 載入腦室 (會自動拉正)
   ├── load_original_image()    ✅ 載入原始影像 (會自動拉正)
   └── calculate_*()            計算函數
 
 model/visualization.py
-  └── visualize_*()            視覺化函數 (接受影像物件不接受路徑)
+  └── visualize_*()            視覺化函數 (接受影像物件)
 
 model/report_generator.py
   ├── INDICATOR_CONFIGS        ✅ 指標配置字典
   └── generate_markdown_report()  ✅ 統一報表產生
+
+processors/case_processor.py
+  ├── process_case_indicator_ratio()
+  └── process_case_evan_index()
+
+processors/batch_processor.py
+  ├── scan_data_directory()
+  └── batch_process()
+
+processors/logger.py
+  └── ProcessLogger            日誌記錄器
 
 model/reorient.py
   ├── reorient_image()         ⚠️ 不要直接用!透過 load_* 函數呼叫
@@ -180,13 +264,35 @@ model/reorient.py
 
 ## ✅ 開發新指標檢查清單
 
-- [ ] 使用 `load_ventricle_pair()` 載入腦室
-- [ ] 使用 `load_original_image()` 載入原始影像
-- [ ] 不直接使用 `nibabel.load()`
-- [ ] 視覺化函數接受影像物件,不接受路徑
-- [ ] 在 `INDICATOR_CONFIGS` 新增配置
-- [ ] 使用 `generate_markdown_report()` 產生報表
+- [ ] 在 `model/calculation.py` 新增計算函數
+- [ ] 在 `model/visualization.py` 新增視覺化函數(接受物件不接受路徑)
+- [ ] 在 `processors/case_processor.py` 新增處理函數
+- [ ] 使用 `load_ventricle_pair()` 和 `load_original_image()` 載入影像
+- [ ] 在 `processors/batch_processor.py` 新增支援
+- [ ] 在 `model/report_generator.py` 的 `INDICATOR_CONFIGS` 新增配置
+- [ ] 更新 `main.py` 的 CLI 參數
 
 ---
 
-**記住: 所有影像載入都走統一函數,視覺化傳物件不傳路徑,報表用統一配置!**
+## 🔍 模組職責說明
+
+### model/ - 純計算模組
+- **只包含**: 計算函數、視覺化函數、報表生成
+- **不包含**: 檔案掃描、日誌記錄、處理流程
+- **原則**: 可以被其他專案重用的純邏輯
+
+### processors/ - 處理協調模組
+- **包含**: 單案例處理、批次處理、日誌記錄
+- **職責**: 協調 model/ 中的函數,處理檔案 I/O
+- **原則**: 專案特定的處理流程
+
+### main.py - CLI 入口
+- **職責**: 解析命令列參數,呼叫 processors/
+- **原則**: 薄層,只做介面不做邏輯
+
+---
+
+**記住三個核心原則:**
+1. **統一載入** - 使用 `load_ventricle_pair()` 和 `load_original_image()`
+2. **傳物件不傳路徑** - 視覺化函數接受已載入的影像物件
+3. **職責分離** - model/ 純邏輯, processors/ 處理流程, CLI 只做介面

@@ -6,7 +6,7 @@
 
 ### 支援的 NPH 指標
 
-本工具支援兩種 NPH 診斷指標，可透過批次處理程式選擇：
+本工具支援兩種 NPH 診斷指標:
 
 #### 1. 質心距離比值 (Centroid Ratio)
 
@@ -18,7 +18,8 @@
 **特點**：
 - 在物理空間（世界座標系統）中計算質心位置
 - 採用加權質心演算法（使用體素強度值作為權重）
-- 每個 Z 切面測量顱內寬度，取最大值
+- 自動拉正影像到 RAS+ 方向,確保測量一致性
+- 每個 Z 切面測量顱內寬度,取最大值
 
 #### 2. 3D Evan Index
 
@@ -28,8 +29,8 @@
 - 前腳最大距離 / 顱內寬度比值
 
 **前腳定義**：
-- Z 軸範圍：預設取 40%-60% 的上方區域（可調整）
-- Y 軸過濾：預設取前方 40% 的點（可調整）
+- Z 軸範圍：預設取 30%-90% 的上方區域（可調整）
+- Y 軸過濾：預設取前方 4% 的點（可調整）
 - 計算左右前腳點雲之間的最大距離
 
 **特點**：
@@ -53,29 +54,39 @@
 
 ```plaintext
 3d-nph-indicators/
-├── main.py                    # 單案例處理程式
-├── batch_process.py           # 批次處理程式（支援兩種指標）
-├── model/
-│   ├── calculation.py         # 計算模組（質心、Evan Index、顱內寬度）
-│   ├── visualization.py       # 視覺化模組（3D 圖表、Marching Cubes）
-│   ├── data_export.py         # 批次處理日誌記錄
-│   └── reorient.py            # 影像處理工具（座標轉換等）
-├── result/                    # 輸出結果目錄
-│   ├── centroid_ratio/        # 質心距離比值結果
-│   │   ├── {case_id}/         # 各案例獨立資料夾
-│   │   │   ├── {case_id}.png  # PNG 圖片
-│   │   │   └── {case_id}.html # 互動式 HTML
-│   │   ├── results_summary.md # 批次處理報表
-│   │   └── processing.log     # 處理日誌
-│   └── evan_index/            # 3D Evan Index 結果
-│       ├── {case_id}/         # 各案例獨立資料夾
-│       │   ├── {case_id}.png  # PNG 圖片
-│       │   └── {case_id}.html # 互動式 HTML
-│       ├── results_summary.md # 批次處理報表
-│       └── processing.log     # 處理日誌
-├── requirements.txt           # Python 依賴套件
-└── README.md                  # 專案說明文件
+├── main.py                      # 統一 CLI 入口（支援單案例/批次處理）
+│
+├── processors/                  # 處理流程模組
+│   ├── case_processor.py        # 單案例處理邏輯
+│   ├── batch_processor.py       # 批次處理邏輯
+│   └── logger.py                # 日誌記錄
+│
+├── model/                       # 核心計算模組
+│   ├── calculation.py           # 計算邏輯（質心、Evan Index、影像載入）
+│   ├── visualization.py         # 3D 視覺化（Plotly + Marching Cubes）
+│   ├── report_generator.py      # Markdown 報表生成
+│   └── reorient.py             # 影像座標轉換（RAS+ 拉正）
+│
+├── result/                      # 輸出結果目錄
+│   ├── centroid_ratio/          # 質心距離比值結果
+│   │   ├── {case_id}/           # 各案例獨立資料夾
+│   │   │   ├── {case_id}.png    # PNG 圖片
+│   │   │   └── {case_id}.html   # 互動式 HTML
+│   │   ├── results_summary.md   # 批次處理報表
+│   │   └── processing.log       # 處理日誌
+│   └── evan_index/              # 3D Evan Index 結果
+│       └── ... (同上)
+│
+├── requirements.txt             # Python 依賴套件
+├── README.md                    # 專案說明文件
+└── CLAUDE.md                    # 開發指南（給 AI 助手）
 ```
+
+### 模組職責說明
+
+- **`model/`** - 純計算和視覺化邏輯,可被其他專案重用
+- **`processors/`** - 處理流程協調,整合 model/ 中的功能
+- **`main.py`** - 統一 CLI 入口,支援單案例和批次處理
 
 ## 安裝與環境設定
 
@@ -132,252 +143,178 @@ pip install -r requirements.txt
 
 將這些檔案放在資料目錄中（例如：`000016209E/` 或 `data_1/`）
 
-### 批次處理（推薦）
-
-批次處理可以一次處理多個案例，並自動產生統計報表。
-
-#### 基本使用
-
-**處理質心距離比值**（預設）：
-```bash
-python3 batch_process.py --type centroid_ratio
-```
-
-**處理 3D Evan Index**：
-```bash
-python3 batch_process.py --type evan_index
-```
-
-#### 完整參數說明
+### 批次處理
 
 ```bash
-python3 batch_process.py \
-  --type centroid_ratio \              # 指標類型：centroid_ratio 或 evan_index
-  --data-dir /path/to/data \           # 資料目錄路徑
-  --skip-not-ok                        # 跳過標記為 _not_ok 的資料夾
+# 質心距離比值
+python main.py batch --type centroid_ratio
+
+# 3D Evan Index
+python main.py batch --type evan_index
+
+# 指定資料目錄
+python main.py batch --type centroid_ratio --data-dir /path/to/data
+
+# Evan Index 進階參數
+python main.py batch --type evan_index --z-range 0.3 0.9 --y-percentile 4
 ```
+
+### 單案例處理
+
+```bash
+# 處理單一案例
+python main.py single --case-dir 000016209E --type centroid_ratio
+
+# 顯示互動式圖表
+python main.py single --case-dir data_5 --type evan_index --show-plot
+
+# 指定輸出路徑
+python main.py single --case-dir 000016209E --output my_result.png
+```
+
+### 查看幫助
+
+```bash
+python main.py --help
+python main.py batch --help
+python main.py single --help
+```
+
+### 參數說明
+
+#### 指標類型參數
+
+- `--type`, `-t`: 選擇指標類型
+  - `centroid_ratio`: 腦室質心距離比值（預設）
+  - `evan_index`: 3D Evan Index
+
+#### 批次處理參數
+
+- `--data-dir`, `-d`: 資料目錄路徑（預設: `/Volumes/Kuro醬の1TSSD/標記好的資料`）
+- `--skip-not-ok`: 跳過標記為 `_not_ok` 的資料夾
+
+#### 單案例處理參數
+
+- `--case-dir`, `-c`: 案例資料夾路徑（必填）
+- `--output`, `-o`: 輸出圖片路徑（可選）
+- `--show-plot`: 顯示互動式圖表視窗
 
 #### Evan Index 進階參數
 
-```bash
-python batch_process.py \
-  --type evan_index \
-  --z-range 0.4 0.6 \                  # Z 軸範圍（預設：0.4 0.6）
-  --y-percentile 40                    # Y 軸前方百分位（預設：40）
-```
+- `--z-range MIN MAX`: Z 軸範圍（預設: `0.3 0.9`）
+  - 調整前腳的垂直範圍
+  - 如果前腳位置較高,可調整為 `0.5 0.9`
+  - 如果前腳位置較低,可調整為 `0.3 0.7`
 
-**參數調整建議**：
-- `--z-range`：調整前腳的垂直範圍
-  - 預設 `0.4 0.6` 表示取 40%-60% 的上方切面
-  - 如果前腳位置較高，可調整為 `0.5 0.7`
-  - 如果前腳位置較低，可調整為 `0.3 0.5`
-- `--y-percentile`：調整前腳的前後範圍
-  - 預設 `40` 表示取前方 40% 的點
+- `--y-percentile N`: Y 軸前方百分位（預設: `4`）
+  - 調整前腳的前後範圍
   - 增加數值會包含更多後方的點
   - 減少數值會更集中在前方區域
 
-#### 查看說明
+### 輸出結果
 
-```bash
-python batch_process.py --help
-```
+#### 批次處理輸出
 
-### 批次處理輸出
+在 `result/{指標類型}/` 目錄中產生：
 
-批次處理完成後，會在 `result/{指標類型}/` 目錄中產生：
-
-1. **{case_id}/** - 各案例獨立資料夾
+1. **各案例資料夾** `{case_id}/`
    - `{case_id}.png` - 高解析度 3D 視覺化（1200 x 900 像素）
-   - `{case_id}.html` - 互動式圖表（可在瀏覽器中開啟，支援 360° 旋轉、縮放、平移）
+   - `{case_id}.html` - 互動式圖表（可在瀏覽器中開啟）
 
 2. **results_summary.md** - 批次處理報表
    - 處理摘要（總數、成功率、耗時）
    - 所有案例測量結果表格
    - 統計數據（最小值、最大值、平均值、中位數）
-   - NPH 案例與非 NPH 案例分組統計
+   - NPH vs 非 NPH 分組統計
    - 失敗案例列表
 
 3. **processing.log** - 詳細處理日誌
+   - 時間戳記
    - 每個案例的處理狀態
-   - 測量數值
    - 錯誤訊息（如有）
-   - 處理時間
 
-### 單案例處理
+#### 單案例輸出
 
-如果只需要處理單一案例：
+在 `result/` 目錄或指定路徑產生：
+- `{case_id}_{type}.png` - 視覺化圖片
+- `{case_id}_{type}.html` - 互動式圖表
 
-1. 修改 `main.py` 中的資料目錄設定：
+## 核心特性
 
-```python
-data_dir = "000016209E"  # 你的案例資料夾名稱
-```
+### 1. 自動影像拉正
 
-2. 執行主程式：
+所有影像在載入時會自動拉正到 RAS+ 方向（Right-Anterior-Superior）:
+- R (Right): X 軸正方向指向右側
+- A (Anterior): Y 軸正方向指向前方
+- S (Superior): Z 軸正方向指向頭頂
 
-```bash
-python main.py
-```
+這確保所有測量都在統一的座標系統中進行,提高結果的準確性和可重複性。
 
-3. 輸出結果會在 `result/` 目錄中
+### 2. NPH 案例識別
 
-## 輸出範例
+批次處理會自動識別 NPH 案例並進行分組統計:
+- 從 `nph-list.txt` 讀取 NPH 案例列表
+- 在報表中標記 NPH 案例（⚠️ NPH）
+- 生成 NPH vs 非 NPH 的比較統計
 
-```plaintext
-======================================================================
-3D NPH 指標計算 - 腦室質心距離分析
-======================================================================
+### 3. 錯誤處理
 
-步驟 1: 載入左右腦室影像
-----------------------------------------------------------------------
+- 完整的錯誤捕獲和記錄
+- 失敗案例不會中斷批次處理
+- 詳細的錯誤訊息和類型記錄
+- 在報表中列出所有失敗案例
 
-載入左腦室: 000016209E/Ventricle_L.nii.gz
-  影像形狀: (512, 512, 29)
-  方向: ('R', 'A', 'S')
-  體素間距: (0.4297, 0.4297, 5.0)
+### 4. 進度追蹤
 
-載入右腦室: 000016209E/Ventricle_R.nii.gz
-  影像形狀: (512, 512, 29)
-  方向: ('R', 'A', 'S')
-  體素間距: (0.4297, 0.4297, 5.0)
-
-✓ 影像形狀相同
-✓ 座標系統驗證通過！將在物理空間中計算。
-
-步驟 2: 計算左右腦室質心距離
-----------------------------------------------------------------------
-
-步驟 3: 計算顱內橫向最大寬度
-----------------------------------------------------------------------
-
-計算顱內橫向最大寬度...
-
-顱內橫向最大寬度: 142.35 mm
-位置: Z 切面 #15
-左端點座標 (mm): (-71.18, 25.43, 75.00)
-右端點座標 (mm): (71.17, 28.76, 75.00)
-
-步驟 4: 計算腦室距離與顱內寬度的比值
-----------------------------------------------------------------------
-腦室距離/顱內寬度比值: 0.2543 (25.43%)
-
-======================================================================
-腦室質心距離測量結果
-======================================================================
-
-左腦室質心座標 (mm): (25.67, 18.32, 85.23)
-右腦室質心座標 (mm): (-10.45, 20.18, 82.67)
-
-體素間距 (mm): 0.4297 x 0.4297 x 5.00
-
-左右腦室質心距離: 36.21 mm
-顱內橫向最大寬度: 142.35 mm
-
-腦室距離/顱內寬度比值: 0.2543 (25.43%)
-======================================================================
-```
+批次處理時提供即時進度資訊:
+- 當前處理案例編號
+- 成功/失敗統計
+- 預估剩餘時間
+- 平均處理速度
 
 ## 技術細節
 
-### 座標系統處理
+### 座標系統
 
-- 所有計算均在物理空間（世界座標系統）中進行
-- 使用 NIfTI affine 矩陣進行體素空間到物理空間的轉換
-- 支援不同方向（RAS, LAS 等）的影像
-- 確保左右腦室影像座標系統一致性
-
-### 質心計算方法
-
-- 採用加權質心演算法
-- 使用體素強度值作為權重
-- 提高計算精確度
+- **影像載入**: 自動轉換到 RAS+ 方向
+- **質心計算**: 在物理空間（世界座標）中進行
+- **距離測量**: 使用實際的毫米單位
 
 ### 視覺化技術
 
-- Marching Cubes 演算法提取腦部和腦室平滑表面
-- Smooth shading 產生專業的 3D 視覺效果
-- 使用 Plotly 產生互動式 WebGL 圖表
-- Kaleido 引擎將圖表轉換為高品質 PNG
+- **表面提取**: Marching Cubes 演算法
+- **3D 渲染**: Plotly 互動式圖表
+- **靜態輸出**: Kaleido 引擎
 
-### 資料處理流程
+### 計算方法
 
-**計算階段（使用原始資料）**：
-- 所有測量計算基於**原始體素資料**（二值化 mask: 0 和 1）
-- 質心計算、距離測量、前腳識別都使用原始體素座標
-- 保證計算結果的精確性和可重現性
+- **質心**: 加權質心演算法（體素強度作為權重）
+- **距離**: 3D 歐式距離
+- **顱內寬度**: 每個 Z 切面的最大橫向距離
 
-**視覺化階段（平滑表面）**：
-- Marching Cubes 算法從原始資料提取平滑表面（閾值 = 0.5）
-- 僅用於 3D 圖表顯示，不影響任何計算結果
-- 提供專業美觀的視覺呈現
+## 開發者資訊
 
-這種設計確保了**測量準確性**與**視覺美觀性**的平衡。
+### 專案架構設計
 
-## 使用範例
+本專案採用清晰的模組化架構:
 
-### 範例 1：批次處理質心距離比值
+- **分層設計**: CLI → Processors → Model
+- **職責分離**: 計算邏輯與處理流程分離
+- **可擴展性**: 易於新增新的指標類型
+- **向後相容**: 保留舊介面,不影響現有使用者
 
-```bash
-# 使用預設設定處理所有案例
-python batch_process.py --type centroid_ratio
+### 新增指標
 
-# 指定資料目錄
-python batch_process.py --type centroid_ratio --data-dir /Volumes/MyData/NPH_Cases
-```
+詳細的開發指南請參考 `CLAUDE.md` 文件,其中包含:
+- 核心設計原則
+- 開發新指標的標準流程
+- 常見錯誤與解決方案
+- 完整的程式碼範例
 
-**輸出**：
-- `result/centroid_ratio/{case_id}/` - 各案例資料夾
-- `result/centroid_ratio/results_summary.md` - 統計報表
+## 授權
 
-### 範例 2：批次處理 3D Evan Index
+[請根據實際情況填寫授權資訊]
 
-```bash
-# 使用預設參數
-python3 batch_process.py --type evan_index
+## 聯絡資訊
 
-# 調整前腳範圍參數
-python3 batch_process.py --type evan_index --z-range 0.3 0.7 --y-percentile 50
-```
-
-**輸出**：
-- `result/evan_index/{case_id}/` - 各案例資料夾
-- `result/evan_index/results_summary.md` - 統計報表
-
-### 範例 3：處理單一案例
-
-```bash
-# 編輯 main.py，設定 data_dir = "000016209E"
-python main.py
-```
-
-## 常見問題
-
-### Q1: 如何調整前腳識別的範圍？
-
-使用 `--z-range` 和 `--y-percentile` 參數：
-```bash
-python batch_process.py --type evan_index --z-range 0.3 0.7 --y-percentile 50
-```
-
-### Q2: 批次處理如何跳過某些案例？
-
-將需要跳過的案例資料夾重新命名，加上 `_not_ok` 後綴：
-```bash
-mv 000123456A 000123456A_not_ok
-```
-
-### Q3: 視覺化圖表太大，如何調整？
-
-編輯 `model/visualization.py`，修改圖表尺寸：
-```python
-width=1200,  # 改為你想要的寬度
-height=900,  # 改為你想要的高度
-```
-
-### Q4: 如何查看處理失敗的原因？
-
-檢查 `result/{指標類型}/processing.log` 檔案，其中包含詳細的錯誤訊息。
-
-## 授權與引用
-
-本工具為研究用途開發，如使用本工具發表研究成果，請適當引用。
+[請根據實際情況填寫聯絡資訊]

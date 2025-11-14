@@ -1,188 +1,216 @@
 #!/usr/bin/env python3
 """
-3D NPH Indicators - 主程式
+3D NPH Indicators - 主程式入口
 正常壓力型水腦症（NPH）3D影像指標計算工具
+
+統一的 CLI 入口,支援:
+- 單案例處理
+- 批次處理
+- 兩種指標類型 (centroid_ratio, evan_index)
 """
 
+import argparse
 from pathlib import Path
-import nibabel as nib
-from model.calculation import (
-    load_ventricle_pair,
-    calculate_centroid_distance,
-    calculate_cranial_width,
-    calculate_ventricle_to_cranial_ratio
-)
-from model.visualization import (
-    visualize_ventricle_distance,
-    print_measurement_summary
-)
-
-
-def process_case(data_dir, output_image_path, show_plot=False, verbose=True):
-    """
-    處理單一案例
-
-    Args:
-        data_dir: 資料目錄路徑
-        output_image_path: 輸出圖片路徑
-        show_plot: 是否顯示互動式圖表
-        verbose: 是否顯示詳細資訊
-
-    Returns:
-        dict: 包含所有測量結果的字典，如果失敗則返回包含錯誤訊息的字典
-    """
-    try:
-        if verbose:
-            print("=" * 70)
-            print(f"處理案例: {data_dir}")
-            print("=" * 70)
-
-        # 偵測檔案命名模式
-        data_path = Path(data_dir)
-        case_name = data_path.name
-
-        # 模式 1: 標準命名
-        left_ventricle_path = data_path / "Ventricle_L.nii.gz"
-        right_ventricle_path = data_path / "Ventricle_R.nii.gz"
-        original_brain_path = data_path / "original.nii.gz"
-
-        # 模式 2: data_ 開頭的命名
-        if case_name.startswith('data_'):
-            data_num = case_name.replace('data_', '')
-            left_ventricle_path_alt = data_path / f"mask_Ventricle_L_{data_num}.nii.gz"
-            right_ventricle_path_alt = data_path / f"mask_Ventricle_R_{data_num}.nii.gz"
-            original_brain_path_alt = data_path / f"original_{data_num}.nii.gz"
-
-            # 使用 data_ 模式的路徑
-            if left_ventricle_path_alt.exists():
-                left_ventricle_path = left_ventricle_path_alt
-                right_ventricle_path = right_ventricle_path_alt
-                original_brain_path = original_brain_path_alt
-
-        # 轉換為字串
-        left_ventricle_path = str(left_ventricle_path)
-        right_ventricle_path = str(right_ventricle_path)
-        original_brain_path = str(original_brain_path)
-
-        # 步驟 1: 載入左右腦室（使用原始座標系統）
-        if verbose:
-            print("\n步驟 1: 載入左右腦室影像")
-            print("-" * 70)
-        left_vent, right_vent = load_ventricle_pair(
-            left_ventricle_path, right_ventricle_path, verbose=verbose
-        )
-
-        # 步驟 2: 計算質心距離
-        if verbose:
-            print("\n步驟 2: 計算左右腦室質心距離")
-            print("-" * 70)
-        distance_mm, left_centroid, right_centroid, voxel_size = calculate_centroid_distance(
-            left_vent, right_vent
-        )
-
-        # 步驟 3: 計算顱內橫向最大寬度
-        if verbose:
-            print("\n步驟 3: 計算顱內橫向最大寬度")
-            print("-" * 70)
-
-        original_brain = nib.load(original_brain_path)
-        cranial_width, left_point, right_point, slice_idx = calculate_cranial_width(original_brain)
-
-        if verbose:
-            print(f"\n顱內橫向最大寬度: {cranial_width:.2f} mm")
-            print(f"位置: Z 切面 #{slice_idx}")
-            print(f"左端點座標 (mm): ({left_point[0]:.2f}, {left_point[1]:.2f}, {left_point[2]:.2f})")
-            print(f"右端點座標 (mm): ({right_point[0]:.2f}, {right_point[1]:.2f}, {right_point[2]:.2f})")
-
-        # 步驟 4: 計算腦室距離與顱內寬度的比值
-        if verbose:
-            print("\n步驟 4: 計算腦室距離與顱內寬度的比值")
-            print("-" * 70)
-        ratio = calculate_ventricle_to_cranial_ratio(distance_mm, cranial_width)
-        if verbose:
-            print(f"腦室距離/顱內寬度比值: {ratio:.4f} ({ratio*100:.2f}%)")
-
-        # 顯示完整測量摘要
-        if verbose:
-            print_measurement_summary(distance_mm, left_centroid, right_centroid, voxel_size,
-                                     cranial_width_mm=cranial_width, ratio=ratio)
-
-        # 步驟 5: 產生視覺化圖片
-        if verbose:
-            print("\n步驟 5: 產生3D視覺化圖片")
-            print("-" * 70)
-
-        # 準備顱內寬度資料
-        cranial_width_data = (cranial_width, left_point, right_point, slice_idx)
-
-        visualize_ventricle_distance(
-            left_vent, right_vent,
-            left_centroid, right_centroid,
-            distance_mm,
-            output_path=str(output_image_path),
-            show_plot=show_plot,
-            original_path=original_brain_path,
-            cranial_width_data=cranial_width_data,
-            ratio=ratio
-        )
-
-        # 返回結果字典
-        return {
-            'status': 'success',
-            'ventricle_distance_mm': distance_mm,
-            'cranial_width_mm': cranial_width,
-            'ratio': ratio,
-            'ratio_percent': ratio * 100,
-            'left_centroid': list(left_centroid),
-            'right_centroid': list(right_centroid),
-            'voxel_size': list(voxel_size),
-            'cranial_width_endpoints': {
-                'left': list(left_point),
-                'right': list(right_point),
-                'slice_index': slice_idx
-            }
-        }
-
-    except Exception as e:
-        if verbose:
-            print(f"\n錯誤: {str(e)}")
-        return {
-            'status': 'error',
-            'error_message': str(e),
-            'error_type': type(e).__name__
-        }
+from processors.batch_processor import batch_process
+from processors.case_processor import process_case_indicator_ratio, process_case_evan_index
 
 
 def main():
-    """主程式：計算左右腦室質心距離"""
+    """主程式入口"""
+    parser = argparse.ArgumentParser(
+        description='3D NPH 指標計算工具',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+指標類型說明:
+  centroid_ratio  - 腦室質心距離/顱內寬度比值（預設）
+  evan_index      - 腦室前腳最大距離/顱內寬度比值（3D Evan Index）
+
+使用範例:
+  # 批次處理
+  python main.py batch --type centroid_ratio
+  python main.py batch --type evan_index --data-dir /path/to/data
+
+  # 單案例處理
+  python main.py single --case-dir 000016209E --type centroid_ratio
+  python main.py single --case-dir data_5 --type evan_index
+        """
+    )
+
+    # 建立子命令
+    subparsers = parser.add_subparsers(dest='command', help='處理模式', required=True)
+
+    # ===== 批次處理子命令 =====
+    batch_parser = subparsers.add_parser(
+        'batch',
+        help='批次處理多個案例',
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+
+    batch_parser.add_argument(
+        '--type', '-t',
+        choices=['centroid_ratio', 'evan_index'],
+        default='centroid_ratio',
+        help='指標類型（預設: centroid_ratio）'
+    )
+
+    batch_parser.add_argument(
+        '--data-dir', '-d',
+        default='/Volumes/Kuro醬の1TSSD/標記好的資料',
+        help='資料目錄路徑'
+    )
+
+    batch_parser.add_argument(
+        '--skip-not-ok',
+        action='store_true',
+        default=True,
+        help='跳過標記為 _not_ok 的資料夾（預設: True）'
+    )
+
+    batch_parser.add_argument(
+        '--z-range',
+        nargs=2,
+        type=float,
+        default=[0.3, 0.9],
+        metavar=('MIN', 'MAX'),
+        help='Z 軸切面範圍（僅用於 evan_index，預設: 0.3 0.9）'
+    )
+
+    batch_parser.add_argument(
+        '--y-percentile',
+        type=int,
+        default=4,
+        help='Y 軸前方百分位數（僅用於 evan_index，預設: 4）'
+    )
+
+    # ===== 單案例處理子命令 =====
+    single_parser = subparsers.add_parser(
+        'single',
+        help='處理單一案例',
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+
+    single_parser.add_argument(
+        '--case-dir', '-c',
+        required=True,
+        help='案例資料夾路徑或名稱'
+    )
+
+    single_parser.add_argument(
+        '--type', '-t',
+        choices=['centroid_ratio', 'evan_index'],
+        default='centroid_ratio',
+        help='指標類型（預設: centroid_ratio）'
+    )
+
+    single_parser.add_argument(
+        '--output', '-o',
+        help='輸出圖片路徑（預設: result/<case_id>_<type>.png）'
+    )
+
+    single_parser.add_argument(
+        '--show-plot',
+        action='store_true',
+        help='顯示互動式圖表'
+    )
+
+    single_parser.add_argument(
+        '--z-range',
+        nargs=2,
+        type=float,
+        default=[0.3, 0.9],
+        metavar=('MIN', 'MAX'),
+        help='Z 軸切面範圍（僅用於 evan_index，預設: 0.3 0.9）'
+    )
+
+    single_parser.add_argument(
+        '--y-percentile',
+        type=int,
+        default=4,
+        help='Y 軸前方百分位數（僅用於 evan_index，預設: 4）'
+    )
+
+    # 解析參數
+    args = parser.parse_args()
+
     print("=" * 70)
-    print("3D NPH 指標計算 - 腦室質心距離分析")
+    print("3D NPH 指標計算工具")
     print("=" * 70)
 
-    # 設定資料目錄
-    data_dir = "000016209E"
+    # 根據子命令執行不同的處理
+    if args.command == 'batch':
+        # 批次處理
+        print(f"模式: 批次處理")
+        print(f"指標類型: {args.type}")
+        print(f"資料目錄: {args.data_dir}")
+        print(f"輸出目錄: result/{args.type}")
+        print(f"跳過 _not_ok: {'是' if args.skip_not_ok else '否'}")
 
-    # 建立 result 資料夾
-    result_dir = Path("result")
-    result_dir.mkdir(exist_ok=True)
+        if args.type == 'evan_index':
+            print(f"前腳定義 - Z 範圍: {args.z_range[0]*100}%-{args.z_range[1]*100}%, Y 百分位: {args.y_percentile}%")
 
-    # 設定輸出檔案路徑
-    output_image = result_dir / f"{data_dir}_ventricle_distance.png"
-
-    # 處理案例
-    result = process_case(data_dir, output_image, show_plot=False, verbose=True)
-
-    if result['status'] == 'success':
-        output_html = output_image.with_suffix('.html')
-        print("\n" + "=" * 70)
-        print("分析完成！")
-        print(f"結果圖片: {output_image}")
-        print(f"互動式HTML: {output_html}")
         print("=" * 70)
-    else:
+        print()
+
+        # 執行批次處理
+        batch_process(
+            data_dir=args.data_dir,
+            indicator_type=args.type,
+            skip_not_ok=args.skip_not_ok,
+            z_range=tuple(args.z_range),
+            y_percentile=args.y_percentile
+        )
+
+    elif args.command == 'single':
+        # 單案例處理
+        case_dir = Path(args.case_dir)
+        case_id = case_dir.name
+
+        # 設定輸出路徑
+        if args.output:
+            output_path = Path(args.output)
+        else:
+            result_dir = Path("result")
+            result_dir.mkdir(exist_ok=True)
+            output_path = result_dir / f"{case_id}_{args.type}.png"
+
+        print(f"模式: 單案例處理")
+        print(f"案例目錄: {args.case_dir}")
+        print(f"指標類型: {args.type}")
+        print(f"輸出路徑: {output_path}")
+
+        if args.type == 'evan_index':
+            print(f"前腳定義 - Z 範圍: {args.z_range[0]*100}%-{args.z_range[1]*100}%, Y 百分位: {args.y_percentile}%")
+
+        print("=" * 70)
+        print()
+
+        # 選擇處理函數
+        if args.type == 'centroid_ratio':
+            result = process_case_indicator_ratio(
+                data_dir=str(case_dir),
+                output_image_path=str(output_path),
+                show_plot=args.show_plot,
+                verbose=True
+            )
+        else:  # evan_index
+            result = process_case_evan_index(
+                data_dir=str(case_dir),
+                output_image_path=str(output_path),
+                show_plot=args.show_plot,
+                verbose=True,
+                z_range=tuple(args.z_range),
+                y_percentile=args.y_percentile
+            )
+
+        # 顯示結果
         print("\n" + "=" * 70)
-        print("分析失敗！")
-        print(f"錯誤: {result.get('error_message', '未知錯誤')}")
+        if result['status'] == 'success':
+            print("分析完成！")
+            print(f"結果圖片: {output_path}")
+            print(f"互動式HTML: {output_path.with_suffix('.html')}")
+        else:
+            print("分析失敗！")
+            print(f"錯誤: {result.get('error_message', '未知錯誤')}")
         print("=" * 70)
 
 
