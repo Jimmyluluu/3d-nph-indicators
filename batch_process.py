@@ -8,11 +8,10 @@
 
 import time
 import argparse
-import nibabel as nib
 from pathlib import Path
-from datetime import datetime
 from model.calculation import (
     load_ventricle_pair,
+    load_original_image,
     calculate_centroid_distance,
     calculate_cranial_width,
     calculate_ventricle_to_cranial_ratio,
@@ -24,7 +23,8 @@ from model.visualization import (
     print_measurement_summary,
     print_evan_index_summary
 )
-from model.data_export import DataExporter, ProcessLogger
+from model.data_export import ProcessLogger
+from model.report_generator import generate_markdown_report, INDICATOR_CONFIGS, format_time
 
 
 def scan_data_directory(base_dir, skip_not_ok=True):
@@ -118,10 +118,13 @@ def process_case_indicator_ratio(data_dir, output_image_path, show_plot=False, v
                 right_path = right_path_alt
                 original_path = original_path_alt
 
-        # 載入腦室影像
+        # 載入腦室影像（自動拉正到 RAS+ 方向）
         left_vent, right_vent = load_ventricle_pair(
             str(left_path), str(right_path), verbose=verbose
         )
+
+        # 載入原始影像（自動拉正到 RAS+ 方向）
+        original_brain = load_original_image(str(original_path), verbose=verbose)
 
         # 計算質心距離
         distance_mm, left_centroid, right_centroid, voxel_size = calculate_centroid_distance(
@@ -129,7 +132,6 @@ def process_case_indicator_ratio(data_dir, output_image_path, show_plot=False, v
         )
 
         # 計算顱內寬度
-        original_brain = nib.load(str(original_path))
         cranial_width, left_point, right_point, slice_idx = calculate_cranial_width(original_brain)
 
         # 計算比值
@@ -148,7 +150,7 @@ def process_case_indicator_ratio(data_dir, output_image_path, show_plot=False, v
             distance_mm,
             output_path=str(output_image_path),
             show_plot=show_plot,
-            original_path=str(original_path),
+            original_img=original_brain,
             cranial_width_data=cranial_width_data,
             ratio=ratio
         )
@@ -179,7 +181,7 @@ def process_case_indicator_ratio(data_dir, output_image_path, show_plot=False, v
 
 
 def process_case_evan_index(data_dir, output_image_path, show_plot=False, verbose=True,
-                            z_range=(0.4, 0.6), y_percentile=40):
+                            z_range=(0.3, 0.9), y_percentile=4):
     """
     處理單一案例 - 3D Evan Index
 
@@ -214,13 +216,13 @@ def process_case_evan_index(data_dir, output_image_path, show_plot=False, verbos
                 right_path = right_path_alt
                 original_path = original_path_alt
 
-        # 載入腦室影像
+        # 載入腦室影像（自動拉正到 RAS+ 方向）
         left_vent, right_vent = load_ventricle_pair(
             str(left_path), str(right_path), verbose=verbose
         )
 
-        # 載入原始影像
-        original_img = nib.load(str(original_path))
+        # 載入原始影像（自動拉正到 RAS+ 方向）
+        original_img = load_original_image(str(original_path), verbose=verbose)
 
         # 計算 3D Evan Index
         evan_data = calculate_3d_evan_index(
@@ -235,7 +237,7 @@ def process_case_evan_index(data_dir, output_image_path, show_plot=False, verbos
         # 視覺化
         visualize_3d_evan_index(
             left_vent, right_vent,
-            str(original_path),
+            original_img,
             evan_data,
             output_path=str(output_image_path),
             show_plot=show_plot,
@@ -264,376 +266,8 @@ def process_case_evan_index(data_dir, output_image_path, show_plot=False, verbos
         }
 
 
-def format_time(seconds):
-    """格式化時間顯示"""
-    if seconds < 60:
-        return f"{seconds:.1f} 秒"
-    elif seconds < 3600:
-        minutes = seconds / 60
-        return f"{minutes:.1f} 分鐘"
-    else:
-        hours = seconds / 3600
-        return f"{hours:.1f} 小時"
-
-
-def load_nph_list(nph_file="nph-list.txt"):
-    """
-    讀取 NPH 案例列表
-
-    Args:
-        nph_file: NPH 列表檔案路徑
-
-    Returns:
-        NPH 案例 ID 集合
-    """
-    nph_file_path = Path(nph_file)
-    if not nph_file_path.exists():
-        # 如果找不到檔案，回傳預設列表
-        return {
-            "000235496D", "001612043H", "000152785B",
-            "000072318C", "data_5", "001149210H",
-            "000087554H", "000137208D", "000096384I", "000206288G"
-        }
-
-    nph_cases = set()
-    with open(nph_file_path, 'r', encoding='utf-8') as f:
-        for line in f:
-            case_id = line.strip()
-            if case_id:
-                nph_cases.add(case_id)
-    return nph_cases
-
-
-def generate_markdown_report_indicator_ratio(results, output_path, total_time, success_count, error_count):
-    """產生質心距離比值的 Markdown 報表"""
-    nph_cases = load_nph_list()
-
-    with open(output_path, 'w', encoding='utf-8') as f:
-        f.write("# 腦室質心距離比值批次處理報表\n\n")
-        f.write(f"**處理時間**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-
-        # 摘要統計
-        f.write("## 處理摘要\n\n")
-        f.write(f"- **總案例數**: {len(results)}\n")
-        f.write(f"- **成功**: {success_count} 個\n")
-        f.write(f"- **失敗**: {error_count} 個\n")
-        f.write(f"- **成功率**: {success_count/len(results)*100:.1f}%\n")
-        f.write(f"- **總耗時**: {format_time(total_time)}\n")
-        f.write(f"- **平均每案例**: {format_time(total_time/len(results))}\n\n")
-
-        # 成功案例表格
-        successful_results = [r for r in results if r.get('status') == 'success']
-        if successful_results:
-            f.write("## 測量結果\n\n")
-            f.write("| 案例 ID | 腦室距離 (mm) | 顱內寬度 (mm) | 比值 | 百分比 | 處理時間 |\n")
-            f.write("|---------|---------------|---------------|------|--------|----------|\n")
-
-            for result in successful_results:
-                case_id = result.get('case_id', 'N/A')
-                distance = result.get('ventricle_distance_mm', 0)
-                width = result.get('cranial_width_mm', 0)
-                ratio = result.get('ratio', 0)
-                percent = result.get('ratio_percent', 0)
-                time_str = result.get('processing_time', 'N/A')
-
-                if case_id in nph_cases:
-                    case_id_display = f"{case_id} ⚠️ NPH"
-                else:
-                    case_id_display = case_id
-
-                f.write(f"| {case_id_display} | {distance:.2f} | {width:.2f} | {ratio:.4f} | {percent:.2f}% | {time_str} |\n")
-
-            # 統計資訊
-            distances = [r['ventricle_distance_mm'] for r in successful_results]
-            widths = [r['cranial_width_mm'] for r in successful_results]
-            ratios = [r['ratio'] for r in successful_results]
-
-            f.write("\n### 統計數據（全部案例）\n\n")
-            f.write("| 指標 | 最小值 | 最大值 | 平均值 | 中位數 |\n")
-            f.write("|------|--------|--------|--------|--------|\n")
-            f.write(f"| 腦室距離 (mm) | {min(distances):.2f} | {max(distances):.2f} | {sum(distances)/len(distances):.2f} | {sorted(distances)[len(distances)//2]:.2f} |\n")
-            f.write(f"| 顱內寬度 (mm) | {min(widths):.2f} | {max(widths):.2f} | {sum(widths)/len(widths):.2f} | {sorted(widths)[len(widths)//2]:.2f} |\n")
-            f.write(f"| 比值 | {min(ratios):.4f} | {max(ratios):.4f} | {sum(ratios)/len(ratios):.4f} | {sorted(ratios)[len(ratios)//2]:.4f} |\n")
-
-            # NPH 和非 NPH 分組統計
-            nph_results = [r for r in successful_results if r.get('case_id') in nph_cases]
-            non_nph_results = [r for r in successful_results if r.get('case_id') not in nph_cases]
-
-            if nph_results:
-                f.write(f"\n### NPH 案例統計 (n={len(nph_results)})\n\n")
-                nph_distances = [r['ventricle_distance_mm'] for r in nph_results]
-                nph_widths = [r['cranial_width_mm'] for r in nph_results]
-                nph_ratios = [r['ratio'] for r in nph_results]
-
-                f.write("| 指標 | 最小值 | 最大值 | 平均值 | 中位數 |\n")
-                f.write("|------|--------|--------|--------|--------|\n")
-                f.write(f"| 腦室距離 (mm) | {min(nph_distances):.2f} | {max(nph_distances):.2f} | {sum(nph_distances)/len(nph_distances):.2f} | {sorted(nph_distances)[len(nph_distances)//2]:.2f} |\n")
-                f.write(f"| 顱內寬度 (mm) | {min(nph_widths):.2f} | {max(nph_widths):.2f} | {sum(nph_widths)/len(nph_widths):.2f} | {sorted(nph_widths)[len(nph_widths)//2]:.2f} |\n")
-                f.write(f"| 比值 | {min(nph_ratios):.4f} | {max(nph_ratios):.4f} | {sum(nph_ratios)/len(nph_ratios):.4f} | {sorted(nph_ratios)[len(nph_ratios)//2]:.4f} |\n")
-
-            if non_nph_results:
-                f.write(f"\n### 非 NPH 案例統計 (n={len(non_nph_results)})\n\n")
-                non_nph_distances = [r['ventricle_distance_mm'] for r in non_nph_results]
-                non_nph_widths = [r['cranial_width_mm'] for r in non_nph_results]
-                non_nph_ratios = [r['ratio'] for r in non_nph_results]
-
-                f.write("| 指標 | 最小值 | 最大值 | 平均值 | 中位數 |\n")
-                f.write("|------|--------|--------|--------|--------|\n")
-                f.write(f"| 腦室距離 (mm) | {min(non_nph_distances):.2f} | {max(non_nph_distances):.2f} | {sum(non_nph_distances)/len(non_nph_distances):.2f} | {sorted(non_nph_distances)[len(non_nph_distances)//2]:.2f} |\n")
-                f.write(f"| 顱內寬度 (mm) | {min(non_nph_widths):.2f} | {max(non_nph_widths):.2f} | {sum(non_nph_widths)/len(non_nph_widths):.2f} | {sorted(non_nph_widths)[len(non_nph_widths)//2]:.2f} |\n")
-                f.write(f"| 比值 | {min(non_nph_ratios):.4f} | {max(non_nph_ratios):.4f} | {sum(non_nph_ratios)/len(non_nph_ratios):.4f} | {sorted(non_nph_ratios)[len(non_nph_ratios)//2]:.4f} |\n")
-
-            # 組間差異
-            if nph_results and non_nph_results:
-                f.write("\n### 組間差異\n\n")
-                f.write("| 指標 | NPH 平均值 | 非 NPH 平均值 | 差異 | 差異百分比 |\n")
-                f.write("|-----|-----------|-------------|------|-----------|\n")
-
-                nph_dist_mean = sum(nph_distances) / len(nph_distances)
-                non_nph_dist_mean = sum(non_nph_distances) / len(non_nph_distances)
-                dist_diff = nph_dist_mean - non_nph_dist_mean
-                dist_pct = (dist_diff / non_nph_dist_mean) * 100
-                f.write(f"| 腦室距離 | {nph_dist_mean:.2f} mm | {non_nph_dist_mean:.2f} mm | {dist_diff:+.2f} mm | {dist_pct:+.1f}% |\n")
-
-                nph_width_mean = sum(nph_widths) / len(nph_widths)
-                non_nph_width_mean = sum(non_nph_widths) / len(non_nph_widths)
-                width_diff = nph_width_mean - non_nph_width_mean
-                width_pct = (width_diff / non_nph_width_mean) * 100
-                f.write(f"| 顱內寬度 | {nph_width_mean:.2f} mm | {non_nph_width_mean:.2f} mm | {width_diff:+.2f} mm | {width_pct:+.1f}% |\n")
-
-                nph_ratio_mean = sum(nph_ratios) / len(nph_ratios)
-                non_nph_ratio_mean = sum(non_nph_ratios) / len(non_nph_ratios)
-                ratio_diff = nph_ratio_mean - non_nph_ratio_mean
-                ratio_pct = (ratio_diff / non_nph_ratio_mean) * 100
-                f.write(f"| **比值** | **{nph_ratio_mean:.4f}** | **{non_nph_ratio_mean:.4f}** | **{ratio_diff:+.4f}** | **{ratio_pct:+.1f}%** |\n")
-
-            # NPH 案例詳細列表
-            if nph_results:
-                f.write("\n## NPH 案例詳細數據\n\n")
-                f.write("| 案例 ID | 腦室距離 (mm) | 顱內寬度 (mm) | 比值 | 百分比 | 排序 |\n")
-                f.write("|---------|---------------|---------------|------|--------|------|\n")
-
-                nph_sorted = sorted(nph_results, key=lambda x: x['ratio'], reverse=True)
-                for i, result in enumerate(nph_sorted, 1):
-                    case_id = result.get('case_id', 'N/A')
-                    distance = result.get('ventricle_distance_mm', 0)
-                    width = result.get('cranial_width_mm', 0)
-                    ratio = result.get('ratio', 0)
-                    percent = result.get('ratio_percent', 0)
-
-                    rank_note = ""
-                    if i == 1:
-                        rank_note = " (最高)"
-                    elif i == len(nph_sorted):
-                        rank_note = " (最低)"
-
-                    f.write(f"| {case_id} | {distance:.2f} | {width:.2f} | {ratio:.4f} | {percent:.2f}% | {i}{rank_note} |\n")
-
-            # 非 NPH 高比值案例
-            non_nph_high = [r for r in non_nph_results if r['ratio'] > 0.25]
-            if non_nph_high:
-                f.write(f"\n## 非 NPH 高比值案例 (> 25%, n={len(non_nph_high)})\n\n")
-                f.write("| 案例 ID | 腦室距離 (mm) | 顱內寬度 (mm) | 比值 | 百分比 | 建議 |\n")
-                f.write("|---------|---------------|---------------|------|--------|------|\n")
-
-                non_nph_high_sorted = sorted(non_nph_high, key=lambda x: x['ratio'], reverse=True)
-                for result in non_nph_high_sorted:
-                    case_id = result.get('case_id', 'N/A')
-                    distance = result.get('ventricle_distance_mm', 0)
-                    width = result.get('cranial_width_mm', 0)
-                    ratio = result.get('ratio', 0)
-                    percent = result.get('ratio_percent', 0)
-
-                    suggestion = "建議密切追蹤"
-                    if ratio >= 0.28:
-                        suggestion = "**建議重新評估**"
-
-                    f.write(f"| {case_id} | {distance:.2f} | {width:.2f} | {ratio:.4f} | {percent:.2f}% | {suggestion} |\n")
-
-        # 失敗案例
-        failed_results = [r for r in results if r.get('status') == 'error']
-        if failed_results:
-            f.write("\n## 失敗案例\n\n")
-            f.write("| 案例 ID | 錯誤類型 | 錯誤訊息 |\n")
-            f.write("|---------|----------|----------|\n")
-
-            for result in failed_results:
-                case_id = result.get('case_id', 'N/A')
-                error_type = result.get('error_type', 'Unknown')
-                error_msg = result.get('error_message', 'N/A')
-                if len(error_msg) > 60:
-                    error_msg = error_msg[:60] + "..."
-                f.write(f"| {case_id} | {error_type} | {error_msg} |\n")
-
-        f.write("\n---\n\n*由 3D NPH Indicators 自動產生*\n")
-
-
-def generate_markdown_report_evan_index(results, output_path, total_time, success_count, error_count):
-    """產生 3D Evan Index 的 Markdown 報表"""
-    nph_cases = load_nph_list()
-
-    with open(output_path, 'w', encoding='utf-8') as f:
-        f.write("# 3D Evan Index 批次處理報表\n\n")
-        f.write(f"**處理時間**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-
-        # 摘要統計
-        f.write("## 處理摘要\n\n")
-        f.write(f"- **總案例數**: {len(results)}\n")
-        f.write(f"- **成功**: {success_count} 個\n")
-        f.write(f"- **失敗**: {error_count} 個\n")
-        f.write(f"- **成功率**: {success_count/len(results)*100:.1f}%\n")
-        f.write(f"- **總耗時**: {format_time(total_time)}\n")
-        f.write(f"- **平均每案例**: {format_time(total_time/len(results))}\n\n")
-
-        # 成功案例表格
-        successful_results = [r for r in results if r.get('status') == 'success']
-        if successful_results:
-            f.write("## 測量結果\n\n")
-            f.write("| 案例 ID | 前腳距離 (mm) | 顱內寬度 (mm) | Evan Index | 百分比 | 處理時間 |\n")
-            f.write("|---------|---------------|---------------|------------|--------|----------|\n")
-
-            for result in successful_results:
-                case_id = result.get('case_id', 'N/A')
-                distance = result.get('anterior_horn_distance_mm', 0)
-                width = result.get('cranial_width_mm', 0)
-                evan_index = result.get('evan_index', 0)
-                percent = result.get('evan_index_percent', 0)
-                time_str = result.get('processing_time', 'N/A')
-
-                if case_id in nph_cases:
-                    case_id_display = f"{case_id} ⚠️ NPH"
-                else:
-                    case_id_display = case_id
-
-                f.write(f"| {case_id_display} | {distance:.2f} | {width:.2f} | {evan_index:.4f} | {percent:.2f}% | {time_str} |\n")
-
-            # 統計資訊
-            distances = [r['anterior_horn_distance_mm'] for r in successful_results]
-            widths = [r['cranial_width_mm'] for r in successful_results]
-            evan_indices = [r['evan_index'] for r in successful_results]
-
-            f.write("\n### 統計數據（全部案例）\n\n")
-            f.write("| 指標 | 最小值 | 最大值 | 平均值 | 中位數 |\n")
-            f.write("|------|--------|--------|--------|--------|\n")
-            f.write(f"| 前腳距離 (mm) | {min(distances):.2f} | {max(distances):.2f} | {sum(distances)/len(distances):.2f} | {sorted(distances)[len(distances)//2]:.2f} |\n")
-            f.write(f"| 顱內寬度 (mm) | {min(widths):.2f} | {max(widths):.2f} | {sum(widths)/len(widths):.2f} | {sorted(widths)[len(widths)//2]:.2f} |\n")
-            f.write(f"| Evan Index | {min(evan_indices):.4f} | {max(evan_indices):.4f} | {sum(evan_indices)/len(evan_indices):.4f} | {sorted(evan_indices)[len(evan_indices)//2]:.4f} |\n")
-
-            # NPH 和非 NPH 分組統計
-            nph_results = [r for r in successful_results if r.get('case_id') in nph_cases]
-            non_nph_results = [r for r in successful_results if r.get('case_id') not in nph_cases]
-
-            if nph_results:
-                f.write(f"\n### NPH 案例統計 (n={len(nph_results)})\n\n")
-                nph_distances = [r['anterior_horn_distance_mm'] for r in nph_results]
-                nph_widths = [r['cranial_width_mm'] for r in nph_results]
-                nph_indices = [r['evan_index'] for r in nph_results]
-
-                f.write("| 指標 | 最小值 | 最大值 | 平均值 | 中位數 |\n")
-                f.write("|------|--------|--------|--------|--------|\n")
-                f.write(f"| 前腳距離 (mm) | {min(nph_distances):.2f} | {max(nph_distances):.2f} | {sum(nph_distances)/len(nph_distances):.2f} | {sorted(nph_distances)[len(nph_distances)//2]:.2f} |\n")
-                f.write(f"| 顱內寬度 (mm) | {min(nph_widths):.2f} | {max(nph_widths):.2f} | {sum(nph_widths)/len(nph_widths):.2f} | {sorted(nph_widths)[len(nph_widths)//2]:.2f} |\n")
-                f.write(f"| Evan Index | {min(nph_indices):.4f} | {max(nph_indices):.4f} | {sum(nph_indices)/len(nph_indices):.4f} | {sorted(nph_indices)[len(nph_indices)//2]:.4f} |\n")
-
-            if non_nph_results:
-                f.write(f"\n### 非 NPH 案例統計 (n={len(non_nph_results)})\n\n")
-                non_nph_distances = [r['anterior_horn_distance_mm'] for r in non_nph_results]
-                non_nph_widths = [r['cranial_width_mm'] for r in non_nph_results]
-                non_nph_indices = [r['evan_index'] for r in non_nph_results]
-
-                f.write("| 指標 | 最小值 | 最大值 | 平均值 | 中位數 |\n")
-                f.write("|------|--------|--------|--------|--------|\n")
-                f.write(f"| 前腳距離 (mm) | {min(non_nph_distances):.2f} | {max(non_nph_distances):.2f} | {sum(non_nph_distances)/len(non_nph_distances):.2f} | {sorted(non_nph_distances)[len(non_nph_distances)//2]:.2f} |\n")
-                f.write(f"| 顱內寬度 (mm) | {min(non_nph_widths):.2f} | {max(non_nph_widths):.2f} | {sum(non_nph_widths)/len(non_nph_widths):.2f} | {sorted(non_nph_widths)[len(non_nph_widths)//2]:.2f} |\n")
-                f.write(f"| Evan Index | {min(non_nph_indices):.4f} | {max(non_nph_indices):.4f} | {sum(non_nph_indices)/len(non_nph_indices):.4f} | {sorted(non_nph_indices)[len(non_nph_indices)//2]:.4f} |\n")
-
-            # 組間差異
-            if nph_results and non_nph_results:
-                f.write("\n### 組間差異\n\n")
-                f.write("| 指標 | NPH 平均值 | 非 NPH 平均值 | 差異 | 差異百分比 |\n")
-                f.write("|-----|-----------|-------------|------|-----------|\n")
-
-                nph_dist_mean = sum(nph_distances) / len(nph_distances)
-                non_nph_dist_mean = sum(non_nph_distances) / len(non_nph_distances)
-                dist_diff = nph_dist_mean - non_nph_dist_mean
-                dist_pct = (dist_diff / non_nph_dist_mean) * 100
-                f.write(f"| 前腳距離 | {nph_dist_mean:.2f} mm | {non_nph_dist_mean:.2f} mm | {dist_diff:+.2f} mm | {dist_pct:+.1f}% |\n")
-
-                nph_width_mean = sum(nph_widths) / len(nph_widths)
-                non_nph_width_mean = sum(non_nph_widths) / len(non_nph_widths)
-                width_diff = nph_width_mean - non_nph_width_mean
-                width_pct = (width_diff / non_nph_width_mean) * 100
-                f.write(f"| 顱內寬度 | {nph_width_mean:.2f} mm | {non_nph_width_mean:.2f} mm | {width_diff:+.2f} mm | {width_pct:+.1f}% |\n")
-
-                nph_index_mean = sum(nph_indices) / len(nph_indices)
-                non_nph_index_mean = sum(non_nph_indices) / len(non_nph_indices)
-                index_diff = nph_index_mean - non_nph_index_mean
-                index_pct = (index_diff / non_nph_index_mean) * 100
-                f.write(f"| **Evan Index** | **{nph_index_mean:.4f}** | **{non_nph_index_mean:.4f}** | **{index_diff:+.4f}** | **{index_pct:+.1f}%** |\n")
-
-            # NPH 案例詳細列表
-            if nph_results:
-                f.write("\n## NPH 案例詳細數據\n\n")
-                f.write("| 案例 ID | 前腳距離 (mm) | 顱內寬度 (mm) | Evan Index | 百分比 | 排序 |\n")
-                f.write("|---------|---------------|---------------|------------|--------|------|\n")
-
-                nph_sorted = sorted(nph_results, key=lambda x: x['evan_index'], reverse=True)
-                for i, result in enumerate(nph_sorted, 1):
-                    case_id = result.get('case_id', 'N/A')
-                    distance = result.get('anterior_horn_distance_mm', 0)
-                    width = result.get('cranial_width_mm', 0)
-                    evan_index = result.get('evan_index', 0)
-                    percent = result.get('evan_index_percent', 0)
-
-                    rank_note = ""
-                    if i == 1:
-                        rank_note = " (最高)"
-                    elif i == len(nph_sorted):
-                        rank_note = " (最低)"
-
-                    f.write(f"| {case_id} | {distance:.2f} | {width:.2f} | {evan_index:.4f} | {percent:.2f}% | {i}{rank_note} |\n")
-
-            # 非 NPH 高 Evan Index 案例
-            non_nph_high = [r for r in non_nph_results if r['evan_index'] > 0.30]
-            if non_nph_high:
-                f.write(f"\n## 非 NPH 高 Evan Index 案例 (> 30%, n={len(non_nph_high)})\n\n")
-                f.write("| 案例 ID | 前腳距離 (mm) | 顱內寬度 (mm) | Evan Index | 百分比 | 建議 |\n")
-                f.write("|---------|---------------|---------------|------------|--------|------|\n")
-
-                non_nph_high_sorted = sorted(non_nph_high, key=lambda x: x['evan_index'], reverse=True)
-                for result in non_nph_high_sorted:
-                    case_id = result.get('case_id', 'N/A')
-                    distance = result.get('anterior_horn_distance_mm', 0)
-                    width = result.get('cranial_width_mm', 0)
-                    evan_index = result.get('evan_index', 0)
-                    percent = result.get('evan_index_percent', 0)
-
-                    suggestion = "建議密切追蹤"
-                    if evan_index >= 0.35:
-                        suggestion = "**建議重新評估**"
-
-                    f.write(f"| {case_id} | {distance:.2f} | {width:.2f} | {evan_index:.4f} | {percent:.2f}% | {suggestion} |\n")
-
-        # 失敗案例
-        failed_results = [r for r in results if r.get('status') == 'error']
-        if failed_results:
-            f.write("\n## 失敗案例\n\n")
-            f.write("| 案例 ID | 錯誤類型 | 錯誤訊息 |\n")
-            f.write("|---------|----------|----------|\n")
-
-            for result in failed_results:
-                case_id = result.get('case_id', 'N/A')
-                error_type = result.get('error_type', 'Unknown')
-                error_msg = result.get('error_message', 'N/A')
-                if len(error_msg) > 60:
-                    error_msg = error_msg[:60] + "..."
-                f.write(f"| {case_id} | {error_type} | {error_msg} |\n")
-
-        f.write("\n---\n\n*由 3D Evan Index Calculator 自動產生*\n")
-
-
 def batch_process(data_dir, indicator_type="centroid_ratio", skip_not_ok=True,
-                  z_range=(0.4, 0.6), y_percentile=40):
+                  z_range=(0.3, 0.9), y_percentile=4):
     """
     批次處理所有案例
 
@@ -651,14 +285,16 @@ def batch_process(data_dir, indicator_type="centroid_ratio", skip_not_ok=True,
 
     log_file = output_path / "processing.log"
 
-    # 選擇處理函數和報表生成函數
+    # 驗證指標類型並取得配置
+    if indicator_type not in INDICATOR_CONFIGS:
+        raise ValueError(f"不支援的指標類型: {indicator_type}。可用的類型: {list(INDICATOR_CONFIGS.keys())}")
+
+    # 選擇處理函數
     if indicator_type == "centroid_ratio":
         process_func = process_case_indicator_ratio
-        report_func = generate_markdown_report_indicator_ratio
         indicator_name = "腦室質心距離比值"
     elif indicator_type == "evan_index":
-        process_func = lambda d, o, s, v: process_case_evan_index(d, o, s, v, z_range, y_percentile)
-        report_func = generate_markdown_report_evan_index
+        process_func = lambda data_dir, output_path, show_plot=False, verbose=True: process_case_evan_index(data_dir, output_path, show_plot=show_plot, verbose=verbose, z_range=z_range, y_percentile=y_percentile)
         indicator_name = "3D Evan Index"
     else:
         raise ValueError(f"不支援的指標類型: {indicator_type}")
@@ -779,7 +415,7 @@ def batch_process(data_dir, indicator_type="centroid_ratio", skip_not_ok=True,
         # 產生 Markdown 報表
         logger.info("\n產生 Markdown 報表...")
         md_path = output_path / "results_summary.md"
-        report_func(results, md_path, total_time, success_count, error_count)
+        generate_markdown_report(results, md_path, total_time, success_count, error_count, indicator_type)
         logger.success(f"Markdown 報表已儲存: {md_path}")
 
         logger.info("\n結果檔案位置:")
@@ -832,16 +468,16 @@ def main():
         '--z-range',
         nargs=2,
         type=float,
-        default=[0.4, 0.6],
+        default=[0.3, 0.9],
         metavar=('MIN', 'MAX'),
-        help='Z 軸切面範圍（僅用於 evan_index，預設: 0.4 0.6）'
+        help='Z 軸切面範圍（僅用於 evan_index，預設: 0.3 0.9）'
     )
 
     parser.add_argument(
         '--y-percentile',
         type=int,
-        default=40,
-        help='Y 軸前方百分位數（僅用於 evan_index，預設: 40）'
+        default=4,
+        help='Y 軸前方百分位數（僅用於 evan_index，預設: 4）'
     )
 
     args = parser.parse_args()

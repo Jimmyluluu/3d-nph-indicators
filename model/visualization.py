@@ -5,7 +5,6 @@
 """
 
 import numpy as np
-import nibabel as nib
 import plotly.graph_objects as go
 from skimage import measure
 from model.reorient import get_image_data
@@ -14,7 +13,7 @@ from model.reorient import get_image_data
 def visualize_ventricle_distance(left_ventricle, right_ventricle,
                                   left_centroid, right_centroid,
                                   distance_mm, output_path="ventricle_distance.png",
-                                  show_plot=True, original_path=None,
+                                  show_plot=True, original_img=None,
                                   cranial_width_data=None, ratio=None):
     """
     視覺化左右腦室和質心距離(在物理空間中)
@@ -27,7 +26,7 @@ def visualize_ventricle_distance(left_ventricle, right_ventricle,
         distance_mm: 距離(mm)
         output_path: 輸出圖片路徑
         show_plot: 是否顯示互動式圖表
-        original_path: 原始腦部影像路徑(可選)
+        original_img: 原始腦部影像物件(可選,已拉正到 RAS+ 方向)
         cranial_width_data: 顱內橫向寬度資料 (寬度, 左端點, 右端點, 切面)(可選)
         ratio: 腦室距離/顱內寬度比值(可選)
 
@@ -40,12 +39,10 @@ def visualize_ventricle_distance(left_ventricle, right_ventricle,
 
     print(f"\n準備視覺化...")
 
-    # 載入原始腦部影像(如果提供)
-    original_img = None
+    # 取得原始腦部影像資料(如果提供)
     original_data = None
-    if original_path:
-        print(f"載入原始腦部影像: {original_path}")
-        original_img = nib.load(original_path)
+    if original_img is not None:
+        print(f"使用已載入的原始腦部影像")
         original_data = get_image_data(original_img)
 
     # 建立圖表
@@ -305,7 +302,7 @@ def print_measurement_summary(distance_mm, left_centroid, right_centroid, voxel_
     print("=" * 70)
 
 
-def visualize_3d_evan_index(left_ventricle, right_ventricle, original_path,
+def visualize_3d_evan_index(left_ventricle, right_ventricle, original_img,
                               evan_data, output_path="evan_index.png",
                               show_plot=True, z_range=(0.4, 0.6), y_percentile=40):
     """
@@ -314,7 +311,7 @@ def visualize_3d_evan_index(left_ventricle, right_ventricle, original_path,
     Args:
         left_ventricle: 左腦室影像物件
         right_ventricle: 右腦室影像物件
-        original_path: 原始腦部影像路徑
+        original_img: 原始腦部影像物件(已拉正到 RAS+ 方向)
         evan_data: 3D Evan Index 計算結果字典
         output_path: 輸出圖片路徑
         show_plot: 是否顯示互動式圖表
@@ -330,9 +327,8 @@ def visualize_3d_evan_index(left_ventricle, right_ventricle, original_path,
 
     print(f"\n準備 3D Evan Index 視覺化...")
 
-    # 載入原始腦部影像
-    print(f"載入原始腦部影像: {original_path}")
-    original_img = nib.load(original_path)
+    # 取得原始腦部影像資料
+    print(f"使用已載入的原始腦部影像")
     original_data = get_image_data(original_img)
 
     # 建立圖表

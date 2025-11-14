@@ -60,6 +60,33 @@ def load_ventricle_pair(left_path, right_path, verbose=True):
     return left_img, right_img
 
 
+def load_original_image(original_path, verbose=True):
+    """
+    載入原始腦部影像並自動拉正到 RAS+ 方向
+
+    此函數作為統一的原始影像載入入口,確保所有模組使用的影像都在相同座標系統
+
+    Args:
+        original_path: 原始影像檔案路徑
+        verbose: 是否顯示載入資訊
+
+    Returns:
+        nibabel.Nifti1Image: 已拉正到 RAS+ 方向的影像物件
+    """
+    from model.reorient import reorient_image
+
+    # 載入影像並自動拉正到 RAS+ 方向
+    original_img, orig_ornt, new_ornt = reorient_image(original_path, verbose=False)
+
+    if verbose:
+        print(f"\n載入原始影像: {original_path}")
+        print(f"  影像形狀: {original_img.shape}")
+        print(f"  原始方向: {orig_ornt} → 標準方向: {new_ornt}")
+        print(f"  體素間距: {original_img.header.get_zooms()[:3]}")
+
+    return original_img
+
+
 def calculate_centroid_3d(image, return_physical=True):
     """
     計算3D影像的質心（重心）座標
