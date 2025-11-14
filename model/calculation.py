@@ -11,7 +11,7 @@ from model.reorient import get_image_data, get_voxel_size
 
 def load_ventricle_pair(left_path, right_path, verbose=True):
     """
-    載入左右腦室影像並驗證座標系統一致性
+    載入左右腦室影像並驗證座標系統一致性（自動拉正到 RAS+ 方向）
 
     Args:
         left_path: 左腦室檔案路徑
@@ -24,19 +24,21 @@ def load_ventricle_pair(left_path, right_path, verbose=True):
     Raises:
         ValueError: 如果座標系統不一致
     """
-    # 載入影像
-    left_img = nib.load(left_path)
-    right_img = nib.load(right_path)
+    from model.reorient import reorient_image
+
+    # 載入影像並自動拉正到 RAS+ 方向
+    left_img, left_orig_ornt, left_new_ornt = reorient_image(left_path, verbose=False)
+    right_img, right_orig_ornt, right_new_ornt = reorient_image(right_path, verbose=False)
 
     if verbose:
         print(f"\n載入左腦室: {left_path}")
         print(f"  影像形狀: {left_img.shape}")
-        print(f"  方向: {nib.aff2axcodes(left_img.affine)}")
+        print(f"  原始方向: {left_orig_ornt} → 標準方向: {left_new_ornt}")
         print(f"  體素間距: {left_img.header.get_zooms()[:3]}")
 
         print(f"\n載入右腦室: {right_path}")
         print(f"  影像形狀: {right_img.shape}")
-        print(f"  方向: {nib.aff2axcodes(right_img.affine)}")
+        print(f"  原始方向: {right_orig_ornt} → 標準方向: {right_new_ornt}")
         print(f"  體素間距: {right_img.header.get_zooms()[:3]}")
 
     # 檢查體素間距是否相同
@@ -207,3 +209,187 @@ def calculate_ventricle_to_cranial_ratio(ventricle_distance_mm, cranial_width_mm
 
     ratio = ventricle_distance_mm / cranial_width_mm
     return ratio
+
+
+def calculate_anterior_horn_max_distance(left_ventricle, right_ventricle, z_range=(0.3, 0.9), y_percentile=4, verbose=True):
+    """
+    計算左右腦室前腳之間的最大距離（3D Evan Index）
+
+    前腳定義：結合 Z 軸（頂部區域）和 Y 軸（前方區域）來篩選前腳點雲
+
+    Args:
+        left_ventricle: 左腦室影像物件
+        right_ventricle: 右腦室影像物件
+        z_range: Z 軸切面範圍（tuple），例如 (0.3, 0.9) 表示取 30%-90% 的上方區域
+        y_percentile: Y 軸前方百分位數，例如 4 表示取前 4% 的前方點
+        verbose: 是否顯示計算過程資訊
+
+    Returns:
+        tuple: (最大距離(mm), 左側端點座標(mm), 右側端點座標(mm), 左側前腳點數, 右側前腳點數)
+    """
+    # 取得資料
+    left_data = get_image_data(left_ventricle)
+    right_data = get_image_data(right_ventricle)
+
+    if verbose:
+        print(f"\n計算腦室前腳最大距離...")
+        print(f"  前腳定義：Z 軸範圍 {z_range[0]*100}%-{z_range[1]*100}%，Y 軸前 {y_percentile}%")
+
+    # 找出所有非零體素的座標（體素空間）
+    left_coords_voxel = np.argwhere(left_data > 0)
+    right_coords_voxel = np.argwhere(right_data > 0)
+
+    if len(left_coords_voxel) == 0 or len(right_coords_voxel) == 0:
+        raise ValueError("左側或右側腦室沒有非零體素！")
+
+    # 篩選前腳區域 - 使用 Z 軸範圍
+    z_min = int(left_data.shape[2] * z_range[0])
+    z_max = int(left_data.shape[2] * z_range[1])
+
+    left_anterior = left_coords_voxel[(left_coords_voxel[:, 2] >= z_min) & (left_coords_voxel[:, 2] <= z_max)]
+    right_anterior = right_coords_voxel[(right_coords_voxel[:, 2] >= z_min) & (right_coords_voxel[:, 2] <= z_max)]
+
+    if len(left_anterior) == 0 or len(right_anterior) == 0:
+        raise ValueError(f"在 Z 軸範圍 {z_range} 內沒有找到前腳點！請調整 z_range 參數。")
+
+    # 進一步篩選 - 使用 Y 軸前方區域
+    # 注意：在 RAS 座標系統中，Y 軸從後（Posterior）到前（Anterior）
+    # 較大的 Y 值表示前方，所以我們要取前 y_percentile% 的較大值
+    left_y_threshold = np.percentile(left_anterior[:, 1], 100 - y_percentile)
+    right_y_threshold = np.percentile(right_anterior[:, 1], 100 - y_percentile)
+
+    left_anterior = left_anterior[left_anterior[:, 1] >= left_y_threshold]
+    right_anterior = right_anterior[right_anterior[:, 1] >= right_y_threshold]
+
+    if len(left_anterior) == 0 or len(right_anterior) == 0:
+        raise ValueError(f"在 Y 軸前 {y_percentile}% 區域內沒有找到前腳點！請調整 y_percentile 參數。")
+
+    if verbose:
+        print(f"  左側前腳點數：{len(left_anterior)}")
+        print(f"  右側前腳點數：{len(right_anterior)}")
+        print(f"  正在計算最大距離...")
+
+    # 將體素座標轉換為物理座標
+    left_anterior_homogeneous = np.column_stack([left_anterior, np.ones(len(left_anterior))])
+    right_anterior_homogeneous = np.column_stack([right_anterior, np.ones(len(right_anterior))])
+
+    left_anterior_physical = (left_ventricle.affine @ left_anterior_homogeneous.T).T[:, :3]
+    right_anterior_physical = (right_ventricle.affine @ right_anterior_homogeneous.T).T[:, :3]
+
+    # 計算左右前腳之間所有點對的距離，找出最大值
+    max_distance = 0
+    left_max_point = None
+    right_max_point = None
+
+    # 採用優化策略：不需要計算所有點對，可以用採樣或其他優化方法
+    # 這裡為了準確性，我們計算所有點對（對於前腳點雲，數量應該是可控的）
+
+    # 如果點太多，進行降採樣
+    max_points = 5000
+    if len(left_anterior_physical) > max_points:
+        indices = np.random.choice(len(left_anterior_physical), max_points, replace=False)
+        left_anterior_physical = left_anterior_physical[indices]
+        if verbose:
+            print(f"  左側點雲降採樣至 {max_points} 點")
+
+    if len(right_anterior_physical) > max_points:
+        indices = np.random.choice(len(right_anterior_physical), max_points, replace=False)
+        right_anterior_physical = right_anterior_physical[indices]
+        if verbose:
+            print(f"  右側點雲降採樣至 {max_points} 點")
+
+    # 計算所有點對的距離
+    for left_point in left_anterior_physical:
+        # 計算該左側點到所有右側點的距離
+        distances = np.linalg.norm(right_anterior_physical - left_point, axis=1)
+        max_idx = np.argmax(distances)
+
+        if distances[max_idx] > max_distance:
+            max_distance = distances[max_idx]
+            left_max_point = left_point
+            right_max_point = right_anterior_physical[max_idx]
+
+    if verbose:
+        print(f"  ✓ 前腳最大距離：{max_distance:.2f} mm")
+        print(f"  左側端點：({left_max_point[0]:.2f}, {left_max_point[1]:.2f}, {left_max_point[2]:.2f})")
+        print(f"  右側端點：({right_max_point[0]:.2f}, {right_max_point[1]:.2f}, {right_max_point[2]:.2f})")
+
+    return max_distance, tuple(left_max_point), tuple(right_max_point), len(left_anterior), len(right_anterior)
+
+
+def calculate_3d_evan_index(left_ventricle, right_ventricle, original_img, z_range=(0.3, 0.9), y_percentile=4, verbose=True):
+    """
+    計算 3D Evan Index（腦室前腳最大距離與顱內寬度的比值）
+
+    Args:
+        left_ventricle: 左腦室影像物件
+        right_ventricle: 右腦室影像物件
+        original_img: 原始腦部影像物件
+        z_range: Z 軸切面範圍（tuple），例如 (0.3, 0.9) 表示取 30%-90% 的上方區域
+        y_percentile: Y 軸前方百分位數，例如 4 表示取前 4% 的前方點
+        verbose: 是否顯示計算過程資訊
+
+    Returns:
+        dict: 包含所有測量結果的字典
+            {
+                'anterior_horn_distance_mm': float,
+                'cranial_width_mm': float,
+                'evan_index': float,
+                'evan_index_percent': float,
+                'anterior_horn_endpoints': {
+                    'left': tuple,
+                    'right': tuple
+                },
+                'cranial_width_endpoints': {
+                    'left': tuple,
+                    'right': tuple,
+                    'slice_index': int
+                },
+                'anterior_horn_points_count': {
+                    'left': int,
+                    'right': int
+                },
+                'voxel_size': tuple
+            }
+    """
+    # 計算前腳最大距離
+    anterior_distance, left_endpoint, right_endpoint, left_count, right_count = \
+        calculate_anterior_horn_max_distance(left_ventricle, right_ventricle, z_range, y_percentile, verbose)
+
+    # 計算顱內寬度
+    cranial_width, cranial_left, cranial_right, cranial_slice = \
+        calculate_cranial_width(original_img)
+
+    # 計算 Evan Index
+    evan_index = anterior_distance / cranial_width
+    evan_index_percent = evan_index * 100
+
+    # 取得體素間距
+    voxel_size = get_voxel_size(left_ventricle)
+
+    if verbose:
+        print(f"\n3D Evan Index 計算結果：")
+        print(f"  前腳最大距離：{anterior_distance:.2f} mm")
+        print(f"  顱內寬度：{cranial_width:.2f} mm")
+        print(f"  Evan Index：{evan_index:.4f} ({evan_index_percent:.2f}%)")
+
+    return {
+        'anterior_horn_distance_mm': anterior_distance,
+        'cranial_width_mm': cranial_width,
+        'evan_index': evan_index,
+        'evan_index_percent': evan_index_percent,
+        'anterior_horn_endpoints': {
+            'left': left_endpoint,
+            'right': right_endpoint
+        },
+        'cranial_width_endpoints': {
+            'left': cranial_left,
+            'right': cranial_right,
+            'slice_index': cranial_slice
+        },
+        'anterior_horn_points_count': {
+            'left': left_count,
+            'right': right_count
+        },
+        'voxel_size': voxel_size
+    }
