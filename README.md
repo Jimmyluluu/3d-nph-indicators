@@ -6,7 +6,7 @@
 
 ### 支援的 NPH 指標
 
-本工具支援兩種 NPH 診斷指標:
+本工具支援三種 NPH 診斷指標:
 
 #### 1. 質心距離比值 (Centroid Ratio)
 
@@ -38,6 +38,19 @@
 - 參數可調整以適應不同影像特徵
 - 提供更精確的前腳擴張評估
 
+#### 3. 腦室表面積 (Surface Area)
+
+**測量內容**：
+- 左腦室表面積 (mm²)
+- 右腦室表面積 (mm²)
+- 總表面積 (mm²)
+
+**特點**：
+- 使用 Marching Cubes 演算法提取平滑表面
+- 純計算模式，不產生視覺化圖表
+- 基於物理空間的精確表面積計算
+- 快速批次處理，適合大規模分析
+
 ### 3D 視覺化
 
 - 產生互動式 3D 視覺化圖表（HTML 格式）
@@ -65,7 +78,7 @@
 │   ├── calculation.py           # 計算邏輯（質心、Evan Index、影像載入）
 │   ├── visualization.py         # 3D 視覺化（Plotly + Marching Cubes）
 │   ├── report_generator.py      # Markdown 報表生成
-│   └── reorient.py             # 影像座標轉換（RAS+ 拉正）
+│   └── image_processing.py       # 影像處理（RAS+ 拉正、平滑等）
 │
 ├── result/                      # 輸出結果目錄
 │   ├── centroid_ratio/          # 質心距離比值結果
@@ -152,6 +165,9 @@ python main.py batch --type centroid_ratio
 # 3D Evan Index
 python main.py batch --type evan_index
 
+# 腦室表面積（純計算）
+python main.py batch --type surface_area
+
 # 指定資料目錄
 python main.py batch --type centroid_ratio --data-dir /path/to/data
 
@@ -167,6 +183,9 @@ python main.py single --case-dir 000016209E --type centroid_ratio
 
 # 顯示互動式圖表
 python main.py single --case-dir data_5 --type evan_index --show-plot
+
+# 腦室表面積計算（單案例）
+python main.py single --case-dir 000016209E --type surface_area
 
 # 指定輸出路徑
 python main.py single --case-dir 000016209E --output my_result.png
@@ -187,6 +206,7 @@ python main.py single --help
 - `--type`, `-t`: 選擇指標類型
   - `centroid_ratio`: 腦室質心距離比值（預設）
   - `evan_index`: 3D Evan Index
+  - `surface_area`: 腦室表面積（純計算模式）
 
 #### 批次處理參數
 
@@ -238,6 +258,8 @@ python main.py single --help
 在 `result/` 目錄或指定路徑產生：
 - `{case_id}_{type}.png` - 視覺化圖片
 - `{case_id}_{type}.html` - 互動式圖表
+
+**注意**: `surface_area` 指標為純計算模式，不產生視覺化圖表
 
 ## 核心特性
 

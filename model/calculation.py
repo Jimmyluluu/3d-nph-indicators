@@ -6,8 +6,7 @@
 
 import numpy as np
 import nibabel as nib
-from model.reorient import get_image_data, get_voxel_size
-
+from model.image_processing import get_image_data, get_voxel_size, reorient_image, extract_surface_mesh
 
 def load_ventricle_pair(left_path, right_path, verbose=True):
     """
@@ -24,7 +23,6 @@ def load_ventricle_pair(left_path, right_path, verbose=True):
     Raises:
         ValueError: 如果座標系統不一致
     """
-    from model.reorient import reorient_image
 
     # 載入影像並自動拉正到 RAS+ 方向
     left_img, left_orig_ornt, left_new_ornt = reorient_image(left_path, verbose=False)
@@ -73,7 +71,6 @@ def load_original_image(original_path, verbose=True):
     Returns:
         nibabel.Nifti1Image: 已拉正到 RAS+ 方向的影像物件
     """
-    from model.reorient import reorient_image
 
     # 載入影像並自動拉正到 RAS+ 方向
     original_img, orig_ornt, new_ornt = reorient_image(original_path, verbose=False)
@@ -419,4 +416,55 @@ def calculate_3d_evan_index(left_ventricle, right_ventricle, original_img, z_ran
             'right': right_count
         },
         'voxel_size': voxel_size
+    }
+
+
+def calculate_surface_area(left_ventricle, right_ventricle, verbose=True):
+    """
+    計算左右腦室的表面積（純計算，不包含視覺化資料）。
+
+    Args:
+        left_ventricle: 左腦室影像物件
+        right_ventricle: 右腦室影像物件
+        verbose (bool): 是否顯示計算過程資訊
+
+    Returns:
+        dict: 包含表面積計算結果的字典
+    """
+    from skimage.measure import mesh_surface_area
+
+    def _get_surface_area(image_obj, name):
+        if verbose:
+            print(f"\n計算 {name} 表面積...")
+
+        # 使用統一的表面提取函數 (Marching Cubes 已經提供平滑表面)
+        mesh_result = extract_surface_mesh(image_obj, level=0.5, verbose=verbose)
+
+        # 取得體素座標的頂點和面
+        vertices_voxel = mesh_result['vertices_voxel']
+        faces = mesh_result['faces']
+
+        # 使用 Marching Cubes 結果計算表面積
+        surface_area = mesh_surface_area(vertices_voxel, faces)
+
+        if verbose:
+            print(f"  - 計算表面積: {surface_area:.2f} mm^2")
+
+        return surface_area
+
+    left_area = _get_surface_area(left_ventricle, "左腦室")
+    right_area = _get_surface_area(right_ventricle, "右腦室")
+
+    total_surface_area = left_area + right_area
+
+    if verbose:
+        print("\n表面積計算總結:")
+        print(f"  左腦室表面積: {left_area:.2f} mm^2")
+        print(f"  右腦室表面積: {right_area:.2f} mm^2")
+        print(f"  總表面積: {total_surface_area:.2f} mm^2")
+
+    return {
+        'left_surface_area': left_area,
+        'right_surface_area': right_area,
+        'total_surface_area': total_surface_area
     }

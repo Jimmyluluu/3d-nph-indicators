@@ -6,8 +6,7 @@
 
 import numpy as np
 import plotly.graph_objects as go
-from skimage import measure
-from model.reorient import get_image_data
+from model.image_processing import get_image_data, extract_surface_mesh
 
 
 def visualize_ventricle_distance(left_ventricle, right_ventricle,
@@ -54,12 +53,10 @@ def visualize_ventricle_distance(left_ventricle, right_ventricle,
             # 使用較低的閾值以顯示腦組織
             threshold = np.percentile(original_data[original_data > 0], 30)
 
-            # 使用 marching cubes 提取表面(在體素空間)
-            verts, faces, normals, values = measure.marching_cubes(original_data, level=threshold)
-
-            # 將頂點從體素座標轉換到物理座標
-            verts_homogeneous = np.column_stack([verts, np.ones(len(verts))])
-            verts_physical = (original_img.affine @ verts_homogeneous.T).T[:, :3]
+            # 使用統一的表面提取函數
+            brain_mesh = extract_surface_mesh(original_img, level=threshold, verbose=False)
+            verts_physical = brain_mesh['vertices_physical']
+            faces = brain_mesh['faces']
 
             # 使用 Mesh3d 繪製表面(降低透明度讓黃線更明顯)
             fig.add_trace(go.Mesh3d(
@@ -84,14 +81,12 @@ def visualize_ventricle_distance(left_ventricle, right_ventricle,
         except Exception as e:
             print(f"警告:無法提取腦部表面 - {str(e)}")
 
-    # 左腦室 - 使用 Marching Cubes 提取平滑表面
+    # 左腦室 - 使用統一表面提取函數
     try:
-        # 對於二值化影像（0 和 1），使用 0.5 作為閾值
-        left_verts, left_faces, _, _ = measure.marching_cubes(left_data, level=0.5)
-
-        # 轉換到物理座標
-        left_verts_homogeneous = np.column_stack([left_verts, np.ones(len(left_verts))])
-        left_verts_physical = (left_ventricle.affine @ left_verts_homogeneous.T).T[:, :3]
+        # 使用統一的表面提取函數
+        left_mesh = extract_surface_mesh(left_ventricle, level=0.5, verbose=False)
+        left_verts_physical = left_mesh['vertices_physical']
+        left_faces = left_mesh['faces']
 
         fig.add_trace(go.Mesh3d(
             x=left_verts_physical[:, 0],
@@ -123,14 +118,12 @@ def visualize_ventricle_distance(left_ventricle, right_ventricle,
             showlegend=True
         ))
 
-    # 右腦室 - 使用 Marching Cubes 提取平滑表面
+    # 右腦室 - 使用統一表面提取函數
     try:
-        # 對於二值化影像（0 和 1），使用 0.5 作為閾值
-        right_verts, right_faces, _, _ = measure.marching_cubes(right_data, level=0.5)
-
-        # 轉換到物理座標
-        right_verts_homogeneous = np.column_stack([right_verts, np.ones(len(right_verts))])
-        right_verts_physical = (right_ventricle.affine @ right_verts_homogeneous.T).T[:, :3]
+        # 使用統一的表面提取函數
+        right_mesh = extract_surface_mesh(right_ventricle, level=0.5, verbose=False)
+        right_verts_physical = right_mesh['vertices_physical']
+        right_faces = right_mesh['faces']
 
         fig.add_trace(go.Mesh3d(
             x=right_verts_physical[:, 0],
@@ -337,11 +330,11 @@ def visualize_3d_evan_index(left_ventricle, right_ventricle, original_img,
     # 繪製腦部表面網格
     try:
         threshold = np.percentile(original_data[original_data > 0], 30)
-        verts, faces, normals, values = measure.marching_cubes(original_data, level=threshold)
 
-        # 將頂點從體素座標轉換到物理座標
-        verts_homogeneous = np.column_stack([verts, np.ones(len(verts))])
-        verts_physical = (original_img.affine @ verts_homogeneous.T).T[:, :3]
+        # 使用統一的表面提取函數
+        brain_mesh = extract_surface_mesh(original_img, level=threshold, verbose=False)
+        verts_physical = brain_mesh['vertices_physical']
+        faces = brain_mesh['faces']
 
         fig.add_trace(go.Mesh3d(
             x=verts_physical[:, 0],
@@ -364,12 +357,10 @@ def visualize_3d_evan_index(left_ventricle, right_ventricle, original_img,
     # 顯示完整腦室 - 使用 Marching Cubes 提取平滑表面
     # 左腦室
     try:
-        # 對於二值化影像（0 和 1），使用 0.5 作為閾值
-        left_verts, left_faces, _, _ = measure.marching_cubes(left_data, level=0.5)
-
-        # 轉換到物理座標
-        left_verts_homogeneous = np.column_stack([left_verts, np.ones(len(left_verts))])
-        left_verts_physical = (left_ventricle.affine @ left_verts_homogeneous.T).T[:, :3]
+        # 使用統一的表面提取函數
+        left_mesh = extract_surface_mesh(left_ventricle, level=0.5, verbose=False)
+        left_verts_physical = left_mesh['vertices_physical']
+        left_faces = left_mesh['faces']
 
         fig.add_trace(go.Mesh3d(
             x=left_verts_physical[:, 0],
@@ -390,12 +381,10 @@ def visualize_3d_evan_index(left_ventricle, right_ventricle, original_img,
 
     # 右腦室
     try:
-        # 對於二值化影像（0 和 1），使用 0.5 作為閾值
-        right_verts, right_faces, _, _ = measure.marching_cubes(right_data, level=0.5)
-
-        # 轉換到物理座標
-        right_verts_homogeneous = np.column_stack([right_verts, np.ones(len(right_verts))])
-        right_verts_physical = (right_ventricle.affine @ right_verts_homogeneous.T).T[:, :3]
+        # 使用統一的表面提取函數
+        right_mesh = extract_surface_mesh(right_ventricle, level=0.5, verbose=False)
+        right_verts_physical = right_mesh['vertices_physical']
+        right_faces = right_mesh['faces']
 
         fig.add_trace(go.Mesh3d(
             x=right_verts_physical[:, 0],
@@ -547,5 +536,115 @@ def print_evan_index_summary(evan_data):
     print(f"  前腳最大距離: {anterior_distance:.2f} mm")
     print(f"  顱內橫向寬度: {cranial_width:.2f} mm")
     print(f"  3D Evan Index: {evan_index:.4f} ({evan_index_percent:.2f}%)")
+
+    print("=" * 70)
+
+
+def visualize_surface_area(surface_data, output_path="surface_area.png", show_plot=True):
+    """
+    使用 Plotly 視覺化平滑後的腦室表面積
+
+    Args:
+        surface_data (dict): 從 calculate_surface_area 函數回傳的字典
+        output_path (str): 輸出圖片路徑
+        show_plot (bool): 是否顯示互動式圖表
+
+    Returns:
+        plotly figure物件
+    """
+    print(f"\n準備表面積視覺化...")
+
+    left_area = surface_data['left_surface_area']
+    right_area = surface_data['right_surface_area']
+    total_area = surface_data['total_surface_area']
+    
+    left_verts = surface_data['left_vertices']
+    left_faces = surface_data['left_faces']
+    right_verts = surface_data['right_vertices']
+    right_faces = surface_data['right_faces']
+
+    fig = go.Figure()
+
+    # 左腦室
+    fig.add_trace(go.Mesh3d(
+        x=left_verts[:, 0], y=left_verts[:, 1], z=left_verts[:, 2],
+        i=left_faces[:, 0], j=left_faces[:, 1], k=left_faces[:, 2],
+        color='blue',
+        opacity=0.8,
+        name=f'Left Ventricle ({left_area:.2f} mm^2)',
+        showlegend=True,
+        lighting=dict(ambient=0.6, diffuse=0.8, specular=0.2),
+        flatshading=False
+    ))
+    print(f"✓ 左腦室網格已加入")
+
+    # 右腦室
+    fig.add_trace(go.Mesh3d(
+        x=right_verts[:, 0], y=right_verts[:, 1], z=right_verts[:, 2],
+        i=right_faces[:, 0], j=right_faces[:, 1], k=right_faces[:, 2],
+        color='red',
+        opacity=0.8,
+        name=f'Right Ventricle ({right_area:.2f} mm^2)',
+        showlegend=True,
+        lighting=dict(ambient=0.6, diffuse=0.8, specular=0.2),
+        flatshading=False
+    ))
+    print(f"✓ 右腦室網格已加入")
+
+    # 更新版面配置
+    title_text = f"Ventricle Surface Area<br>Total: {total_area:.2f} mm^2"
+    fig.update_layout(
+        title=title_text,
+        scene=dict(
+            xaxis_title='X (mm)',
+            yaxis_title='Y (mm)',
+            zaxis_title='Z (mm)',
+            aspectmode='data',
+            camera=dict(
+                eye=dict(x=1.5, y=1.5, z=1.5)
+            )
+        ),
+        width=1200,
+        height=900,
+        showlegend=True
+    )
+
+    # 儲存圖片
+    print(f"\n儲存圖片到: {output_path}")
+    fig.write_image(output_path)
+    print(f"圖片已儲存！")
+
+    # 同時儲存 HTML(可互動)
+    html_path = output_path.replace('.png', '.html')
+    fig.write_html(html_path)
+    print(f"互動式HTML已儲存到: {html_path}")
+
+    # 顯示圖表
+    if show_plot:
+        fig.show()
+
+    return fig
+
+
+def print_surface_area_summary(surface_data):
+    """
+    格式化輸出表面積測量結果
+
+    Args:
+        surface_data (dict): 從 calculate_surface_area 函數回傳的字典
+    """
+    print("\n" + "=" * 70)
+    print("腦室表面積測量結果")
+    print("=" * 70)
+
+    left_area = surface_data['left_surface_area']
+    right_area = surface_data['right_surface_area']
+    total_area = surface_data['total_surface_area']
+
+    print(f"\n測量結果：")
+    print(f"  左腦室表面積: {left_area:.2f} mm^2")
+    print(f"  右腦室表面積: {right_area:.2f} mm^2")
+    print(f"  總表面積: {total_area:.2f} mm^2")
+
 
     print("=" * 70)

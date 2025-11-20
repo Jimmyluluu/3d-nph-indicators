@@ -7,16 +7,17 @@
 import time
 from pathlib import Path
 from processors.logger import ProcessLogger
-from processors.case_processor import process_case_indicator_ratio, process_case_evan_index
+from processors.case_processor import process_case_indicator_ratio, process_case_evan_index, process_case_surface_area
 from model.report_generator import generate_markdown_report, INDICATOR_CONFIGS, format_time
 
 
-def scan_data_directory(base_dir, skip_not_ok=True):
+def scan_data_directory(base_dir, indicator_type, skip_not_ok=True):
     """
     掃描資料目錄，找出所有有效的案例資料夾
 
     Args:
         base_dir: 基礎資料目錄路徑
+        indicator_type: 指標類型, 用於決定需要哪些檔案
         skip_not_ok: 是否跳過標記為 _not_ok 的資料夾
 
     Returns:
@@ -29,6 +30,8 @@ def scan_data_directory(base_dir, skip_not_ok=True):
 
     # 取得所有子目錄
     all_dirs = [d for d in base_path.iterdir() if d.is_dir()]
+    
+    requires_original = indicator_type != 'surface_area'
 
     # 過濾掉隱藏檔案（._ 開頭）和 _not_ok 標記的資料夾
     valid_dirs = []
@@ -43,27 +46,26 @@ def scan_data_directory(base_dir, skip_not_ok=True):
 
         # 檢查是否包含必要的檔案（兩種命名模式）
         # 模式 1: 標準命名
-        required_files_pattern1 = [
-            d / "Ventricle_L.nii.gz",
-            d / "Ventricle_R.nii.gz",
-            d / "original.nii.gz"
-        ]
+        required_files_p1 = [d / "Ventricle_L.nii.gz", d / "Ventricle_R.nii.gz"]
+        if requires_original:
+            required_files_p1.append(d / "original.nii.gz")
 
         # 模式 2: data_ 開頭的命名
         if d.name.startswith('data_'):
             data_num = d.name.replace('data_', '')
-            required_files_pattern2 = [
+            required_files_p2 = [
                 d / f"mask_Ventricle_L_{data_num}.nii.gz",
-                d / f"mask_Ventricle_R_{data_num}.nii.gz",
-                d / f"original_{data_num}.nii.gz"
+                d / f"mask_Ventricle_R_{data_num}.nii.gz"
             ]
+            if requires_original:
+                required_files_p2.append(d / f"original_{data_num}.nii.gz")
         else:
-            required_files_pattern2 = []
+            required_files_p2 = []
 
         # 檢查任一模式是否存在
-        if all(f.exists() for f in required_files_pattern1):
+        if all(f.exists() for f in required_files_p1):
             valid_dirs.append(d)
-        elif required_files_pattern2 and all(f.exists() for f in required_files_pattern2):
+        elif required_files_p2 and all(f.exists() for f in required_files_p2):
             valid_dirs.append(d)
 
     return sorted(valid_dirs)
@@ -76,7 +78,7 @@ def batch_process(data_dir, indicator_type="centroid_ratio", skip_not_ok=True,
 
     Args:
         data_dir: 資料目錄路徑
-        indicator_type: 指標類型 ("centroid_ratio" 或 "evan_index")
+        indicator_type: 指標類型
         skip_not_ok: 是否跳過標記為 _not_ok 的資料夾
         z_range: Z 軸切面範圍（僅用於 evan_index）
         y_percentile: Y 軸前方百分位數（僅用於 evan_index）
@@ -99,6 +101,9 @@ def batch_process(data_dir, indicator_type="centroid_ratio", skip_not_ok=True,
     elif indicator_type == "evan_index":
         process_func = lambda data_dir, output_path, show_plot=False, verbose=True: process_case_evan_index(data_dir, output_path, show_plot=show_plot, verbose=verbose, z_range=z_range, y_percentile=y_percentile)
         indicator_name = "3D Evan Index"
+    elif indicator_type == "surface_area":
+        process_func = lambda data_dir, output_path, show_plot=False, verbose=True: process_case_surface_area(data_dir, output_path, show_plot=show_plot, verbose=verbose)
+        indicator_name = "腦室表面積"
     else:
         raise ValueError(f"不支援的指標類型: {indicator_type}")
 
@@ -113,7 +118,7 @@ def batch_process(data_dir, indicator_type="centroid_ratio", skip_not_ok=True,
 
         # 掃描資料目錄
         try:
-            case_dirs = scan_data_directory(data_dir, skip_not_ok=skip_not_ok)
+            case_dirs = scan_data_directory(data_dir, indicator_type, skip_not_ok=skip_not_ok)
             total_cases = len(case_dirs)
 
             if total_cases == 0:
@@ -168,10 +173,14 @@ def batch_process(data_dir, indicator_type="centroid_ratio", skip_not_ok=True,
                         logger.info(f"     腦室距離: {result['ventricle_distance_mm']:.2f} mm")
                         logger.info(f"     顱內寬度: {result['cranial_width_mm']:.2f} mm")
                         logger.info(f"     比值: {result['ratio']:.4f} ({result['ratio_percent']:.2f}%)")
-                    else:  # evan_index
+                    elif indicator_type == "evan_index":
                         logger.info(f"     前腳距離: {result['anterior_horn_distance_mm']:.2f} mm")
                         logger.info(f"     顱內寬度: {result['cranial_width_mm']:.2f} mm")
                         logger.info(f"     Evan Index: {result['evan_index']:.4f} ({result['evan_index_percent']:.2f}%)")
+                    elif indicator_type == "surface_area":
+                        logger.info(f"     左腦室表面積: {result['left_surface_area']:.2f} mm^2")
+                        logger.info(f"     右腦室表面積: {result['right_surface_area']:.2f} mm^2")
+                        logger.info(f"     總表面積: {result['total_surface_area']:.2f} mm^2")
 
                     logger.info(f"     處理時間: {processing_time:.1f}s")
                 else:

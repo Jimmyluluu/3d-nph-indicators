@@ -11,13 +11,15 @@ from model.calculation import (
     calculate_centroid_distance,
     calculate_cranial_width,
     calculate_ventricle_to_cranial_ratio,
-    calculate_3d_evan_index
+    calculate_3d_evan_index,
+    calculate_surface_area
 )
 from model.visualization import (
     visualize_ventricle_distance,
     visualize_3d_evan_index,
     print_measurement_summary,
-    print_evan_index_summary
+    print_evan_index_summary,
+    print_surface_area_summary
 )
 
 
@@ -200,3 +202,59 @@ def process_case_evan_index(data_dir, output_image_path, show_plot=False, verbos
             'error_message': str(e),
             'error_type': type(e).__name__
         }
+
+
+def process_case_surface_area(data_dir, output_image_path, show_plot=False, verbose=True):
+    """
+    處理單一案例 - 腦室表面積
+
+    Args:
+        data_dir (str): 資料目錄路徑
+        output_image_path (str): 輸出圖片路徑
+        show_plot (bool): 是否顯示互動式圖表
+        verbose (bool): 是否顯示詳細資訊
+
+    Returns:
+        dict: 包含所有測量結果的字典
+    """
+    try:
+        data_path = Path(data_dir)
+        case_name = data_path.name
+
+        # 找檔案
+        left_path = data_path / "Ventricle_L.nii.gz"
+        right_path = data_path / "Ventricle_R.nii.gz"
+        
+        if not left_path.exists() or not right_path.exists():
+            raise FileNotFoundError(f"在 {data_dir} 中找不到腦室檔案 Ventricle_L.nii.gz 或 Ventricle_R.nii.gz")
+
+        # 載入腦室影像
+        left_vent, right_vent = load_ventricle_pair(
+            str(left_path), str(right_path), verbose=verbose
+        )
+
+        # 計算表面積
+        surface_data = calculate_surface_area(
+            left_vent, right_vent,
+            verbose=verbose
+        )
+
+        # 輸出摘要
+        if verbose:
+            print_surface_area_summary(surface_data)
+
+        # 返回成功結果（純計算，不需要視覺化）
+        return {
+            'status': 'success',
+            'left_surface_area': surface_data['left_surface_area'],
+            'right_surface_area': surface_data['right_surface_area'],
+            'total_surface_area': surface_data['total_surface_area']
+        }
+
+    except Exception as e:
+        return {
+            'status': 'error',
+            'error_message': str(e),
+            'error_type': type(e).__name__
+        }
+

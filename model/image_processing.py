@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """
 影像重新定向工具
@@ -6,6 +7,8 @@
 
 import nibabel as nib
 from pathlib import Path
+import numpy as np
+from skimage import measure
 
 
 def reorient_image(image_path: str, verbose: bool = True):
@@ -143,3 +146,64 @@ def process_all_images(input_dir: str, output_dir: str = None, save_files: bool 
     print(f"批次處理完成！共處理 {len(results)} 個檔案")
 
     return results
+
+
+def convert_voxel_to_physical(verts_voxel, affine):
+    """
+    將體素座標轉換為物理座標
+
+    Args:
+        verts_voxel: 體素座標陣列，形狀為 (N, 3)
+        affine: 4x4 仿射矩陣
+
+    Returns:
+        numpy陣列: 物理座標，形狀為 (N, 3)
+    """
+    # 轉換為齊次座標
+    verts_homogeneous = np.column_stack([verts_voxel, np.ones(len(verts_voxel))])
+    # 應用仿射變換
+    verts_physical = (affine @ verts_homogeneous.T).T[:, :3]
+    return verts_physical
+
+
+def extract_surface_mesh(image_obj, level=0.5, verbose=False):
+    """
+    使用 Marching Cubes 演算法提取 3D 表面網格
+
+    Args:
+        image_obj: nibabel 影像物件
+        level: Marching Cubes 等級值
+        verbose: 是否顯示處理資訊
+
+    Returns:
+        dict: 包含以下鍵值的字典:
+            - 'vertices_physical': 物理座標頂點 (N, 3)
+            - 'faces': 三角面索引 (M, 3)
+            - 'vertices_voxel': 體素座標頂點 (N, 3)
+    """
+    if verbose:
+        print(f"提取表面網格 - level: {level}")
+
+    # 取得影像資料和體素間距
+    image_data = get_image_data(image_obj)
+    voxel_size = get_voxel_size(image_obj)
+
+    try:
+        # 執行 Marching Cubes (已經提供平滑表面)
+        verts, faces, _, _ = measure.marching_cubes(
+            image_data,
+            level=level,
+            spacing=voxel_size
+        )
+
+        # 轉換為物理座標
+        verts_physical = convert_voxel_to_physical(verts, image_obj.affine)
+
+        return {
+            'vertices_physical': verts_physical,
+            'faces': faces,
+            'vertices_voxel': verts
+        }
+
+    except Exception as e:
+        raise RuntimeError(f"表面提取失敗: {str(e)}")

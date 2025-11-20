@@ -21,7 +21,7 @@
 └── model/                       # 純計算和視覺化模組
     ├── calculation.py          # 計算邏輯(含統一載入函數)
     ├── visualization.py        # 3D 視覺化
-    ├── reorient.py            # 影像拉正工具
+    ├── image_processing.py
     └── report_generator.py    # 報表產生
 ```
 
@@ -91,6 +91,15 @@ generate_markdown_report(results, output_path, total_time,
 ---
 
 ## 📝 開發新指標標準流程
+
+### ⚠️ 表面積計算的特殊處理
+
+對於表面積計算，請注意：
+- **無視覺化需求** - 表面積計算為純計算模式，不需要產生 3D 圖表
+- **返回值格式** - 只需返回數值結果，不需要網格資料
+- **處理函數** - 不需呼叫視覺化函數，直接返回計算結果
+
+參考現有的 `calculate_surface_area()` 和 `process_case_surface_area()` 實作。
 
 ### 步驟 1: 在 `model/calculation.py` 新增計算函數
 
@@ -254,7 +263,7 @@ processors/batch_processor.py
 processors/logger.py
   └── ProcessLogger            日誌記錄器
 
-model/reorient.py
+model/image_processing.py
   ├── reorient_image()         ⚠️ 不要直接用!透過 load_* 函數呼叫
   ├── get_image_data()         ✅ 取得影像資料
   └── get_voxel_size()         ✅ 取得體素大小

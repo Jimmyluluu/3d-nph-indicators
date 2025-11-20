@@ -6,13 +6,13 @@
 統一的 CLI 入口,支援:
 - 單案例處理
 - 批次處理
-- 兩種指標類型 (centroid_ratio, evan_index)
+- 三種指標類型 (centroid_ratio, evan_index, surface_area)
 """
 
 import argparse
 from pathlib import Path
 from processors.batch_processor import batch_process
-from processors.case_processor import process_case_indicator_ratio, process_case_evan_index
+from processors.case_processor import process_case_indicator_ratio, process_case_evan_index, process_case_surface_area
 
 
 def main():
@@ -24,15 +24,17 @@ def main():
 指標類型說明:
   centroid_ratio  - 腦室質心距離/顱內寬度比值（預設）
   evan_index      - 腦室前腳最大距離/顱內寬度比值（3D Evan Index）
+  surface_area    - 腦室表面積（mm^2）
 
 使用範例:
   # 批次處理
   python main.py batch --type centroid_ratio
   python main.py batch --type evan_index --data-dir /path/to/data
+  python main.py batch --type surface_area --smoothing-iterations 150
 
   # 單案例處理
   python main.py single --case-dir 000016209E --type centroid_ratio
-  python main.py single --case-dir data_5 --type evan_index
+  python main.py single --case-dir data_5 --type surface_area
         """
     )
 
@@ -48,7 +50,7 @@ def main():
 
     batch_parser.add_argument(
         '--type', '-t',
-        choices=['centroid_ratio', 'evan_index'],
+        choices=['centroid_ratio', 'evan_index', 'surface_area'],
         default='centroid_ratio',
         help='指標類型（預設: centroid_ratio）'
     )
@@ -82,6 +84,16 @@ def main():
         help='Y 軸前方百分位數（僅用於 evan_index，預設: 4）'
     )
 
+    # Surface Area 相關參數
+    batch_parser.add_argument(
+        '--smoothing-iterations', type=int, default=100,
+        help='平滑迭代次數（僅用於 surface_area，預設: 100）'
+    )
+    batch_parser.add_argument(
+        '--smoothing-factor', type=float, default=0.1,
+        help='平滑因子（僅用於 surface_area，預設: 0.1）'
+    )
+
     # ===== 單案例處理子命令 =====
     single_parser = subparsers.add_parser(
         'single',
@@ -97,7 +109,7 @@ def main():
 
     single_parser.add_argument(
         '--type', '-t',
-        choices=['centroid_ratio', 'evan_index'],
+        choices=['centroid_ratio', 'evan_index', 'surface_area'],
         default='centroid_ratio',
         help='指標類型（預設: centroid_ratio）'
     )
@@ -127,6 +139,16 @@ def main():
         type=int,
         default=4,
         help='Y 軸前方百分位數（僅用於 evan_index，預設: 4）'
+    )
+
+    # Surface Area 相關參數
+    single_parser.add_argument(
+        '--smoothing-iterations', type=int, default=100,
+        help='平滑迭代次數（僅用於 surface_area，預設: 100）'
+    )
+    single_parser.add_argument(
+        '--smoothing-factor', type=float, default=0.1,
+        help='平滑因子（僅用於 surface_area，預設: 0.1）'
     )
 
     # 解析參數
@@ -192,7 +214,7 @@ def main():
                 show_plot=args.show_plot,
                 verbose=True
             )
-        else:  # evan_index
+        elif args.type == 'evan_index':
             result = process_case_evan_index(
                 data_dir=str(case_dir),
                 output_image_path=str(output_path),
@@ -200,6 +222,13 @@ def main():
                 verbose=True,
                 z_range=tuple(args.z_range),
                 y_percentile=args.y_percentile
+            )
+        elif args.type == 'surface_area':
+            result = process_case_surface_area(
+                data_dir=str(case_dir),
+                output_image_path=str(output_path),
+                show_plot=args.show_plot,
+                verbose=True
             )
 
         # 顯示結果
