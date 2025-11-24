@@ -7,7 +7,7 @@
 import time
 from pathlib import Path
 from processors.logger import ProcessLogger
-from processors.case_processor import process_case_indicator_ratio, process_case_evan_index, process_case_surface_area
+from processors.case_processor import process_case_indicator_ratio, process_case_evan_index, process_case_surface_area, process_case_volume_surface_ratio
 from model.report_generator import generate_markdown_report, INDICATOR_CONFIGS, format_time
 
 
@@ -31,7 +31,7 @@ def scan_data_directory(base_dir, indicator_type, skip_not_ok=True):
     # 取得所有子目錄
     all_dirs = [d for d in base_path.iterdir() if d.is_dir()]
     
-    requires_original = indicator_type != 'surface_area'
+    requires_original = indicator_type not in ['surface_area', 'volume_surface_ratio']
 
     # 過濾掉隱藏檔案（._ 開頭）和 _not_ok 標記的資料夾
     valid_dirs = []
@@ -104,6 +104,9 @@ def batch_process(data_dir, indicator_type="centroid_ratio", skip_not_ok=True,
     elif indicator_type == "surface_area":
         process_func = lambda data_dir, output_path, show_plot=False, verbose=True: process_case_surface_area(data_dir, output_path, show_plot=show_plot, verbose=verbose)
         indicator_name = "腦室表面積"
+    elif indicator_type == "volume_surface_ratio":
+        process_func = lambda data_dir, output_path, show_plot=False, verbose=True: process_case_volume_surface_ratio(data_dir, output_path, show_plot=show_plot, verbose=verbose)
+        indicator_name = "體積與表面積比例"
     else:
         raise ValueError(f"不支援的指標類型: {indicator_type}")
 
@@ -181,6 +184,17 @@ def batch_process(data_dir, indicator_type="centroid_ratio", skip_not_ok=True,
                         logger.info(f"     左腦室表面積: {result['left_surface_area']:.2f} mm^2")
                         logger.info(f"     右腦室表面積: {result['right_surface_area']:.2f} mm^2")
                         logger.info(f"     總表面積: {result['total_surface_area']:.2f} mm^2")
+                    elif indicator_type == "volume_surface_ratio":
+                        logger.info(f"     左腦室體積: {result['left_volume']:.2f} mm³")
+                        logger.info(f"     右腦室體積: {result['right_volume']:.2f} mm³")
+                        logger.info(f"     總體積: {result['total_volume']:.2f} mm³")
+                        logger.info(f"     左腦室表面積: {result['left_surface_area']:.2f} mm²")
+                        logger.info(f"     右腦室表面積: {result['right_surface_area']:.2f} mm²")
+                        logger.info(f"     總表面積: {result['total_surface_area']:.2f} mm²")
+                        logger.info(f"     左腦室比例: {result['left_ratio']:.4f} mm")
+                        logger.info(f"     右腦室比例: {result['right_ratio']:.4f} mm")
+                        logger.info(f"     整體比例: {result['total_ratio']:.4f} mm")
+                        logger.info(f"     比例差異: {result['ratio_difference']:.4f} mm ({result['ratio_difference_percent']:.2f}%)")
 
                     logger.info(f"     處理時間: {processing_time:.1f}s")
                 else:

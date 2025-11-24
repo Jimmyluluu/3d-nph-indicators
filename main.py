@@ -12,7 +12,7 @@
 import argparse
 from pathlib import Path
 from processors.batch_processor import batch_process
-from processors.case_processor import process_case_indicator_ratio, process_case_evan_index, process_case_surface_area
+from processors.case_processor import process_case_indicator_ratio, process_case_evan_index, process_case_surface_area, process_case_volume_surface_ratio
 
 
 def main():
@@ -22,19 +22,22 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 指標類型說明:
-  centroid_ratio  - 腦室質心距離/顱內寬度比值（預設）
-  evan_index      - 腦室前腳最大距離/顱內寬度比值（3D Evan Index）
-  surface_area    - 腦室表面積（mm^2）
+  centroid_ratio      - 腦室質心距離/顱內寬度比值（預設）
+  evan_index          - 腦室前腳最大距離/顱內寬度比值（3D Evan Index）
+  surface_area        - 腦室表面積（mm^2）
+  volume_surface_ratio - 體積與表面積比例（mm，球形度指標）
 
 使用範例:
   # 批次處理
   python main.py batch --type centroid_ratio
   python main.py batch --type evan_index --data-dir /path/to/data
   python main.py batch --type surface_area --smoothing-iterations 150
+  python main.py batch --type volume_surface_ratio
 
   # 單案例處理
   python main.py single --case-dir 000016209E --type centroid_ratio
   python main.py single --case-dir data_5 --type surface_area
+  python main.py single --case-dir data_5 --type volume_surface_ratio
         """
     )
 
@@ -50,7 +53,7 @@ def main():
 
     batch_parser.add_argument(
         '--type', '-t',
-        choices=['centroid_ratio', 'evan_index', 'surface_area'],
+        choices=['centroid_ratio', 'evan_index', 'surface_area', 'volume_surface_ratio'],
         default='centroid_ratio',
         help='指標類型（預設: centroid_ratio）'
     )
@@ -109,7 +112,7 @@ def main():
 
     single_parser.add_argument(
         '--type', '-t',
-        choices=['centroid_ratio', 'evan_index', 'surface_area'],
+        choices=['centroid_ratio', 'evan_index', 'surface_area', 'volume_surface_ratio'],
         default='centroid_ratio',
         help='指標類型（預設: centroid_ratio）'
     )
@@ -225,6 +228,13 @@ def main():
             )
         elif args.type == 'surface_area':
             result = process_case_surface_area(
+                data_dir=str(case_dir),
+                output_image_path=str(output_path),
+                show_plot=args.show_plot,
+                verbose=True
+            )
+        elif args.type == 'volume_surface_ratio':
+            result = process_case_volume_surface_ratio(
                 data_dir=str(case_dir),
                 output_image_path=str(output_path),
                 show_plot=args.show_plot,

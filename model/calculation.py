@@ -468,3 +468,138 @@ def calculate_surface_area(left_ventricle, right_ventricle, verbose=True):
         'right_surface_area': right_area,
         'total_surface_area': total_surface_area
     }
+
+
+def calculate_volume_smooth(image_obj, verbose=True):
+    """
+    使用 Marching Cubes 演算法計算平滑體積（基於三角網格）
+
+    Args:
+        image_obj: nibabel 影像物件
+        verbose (bool): 是否顯示計算過程資訊
+
+    Returns:
+        float: 平滑體積 (mm³)
+    """
+    if verbose:
+        print(f"\n計算平滑體積...")
+
+    # 使用統一的表面提取函數 (與表面積計算相同)
+    mesh_result = extract_surface_mesh(image_obj, level=0.5, verbose=False)
+
+    # 取得物理座標的頂點和面
+    vertices_physical = mesh_result['vertices_physical']
+    faces = mesh_result['faces']
+
+    # 基於三角網格計算體積
+    # 使用公式：V = (1/6) * Σ((v1 × v2) · v3) 對於每個三角形
+    volume = 0.0
+    for face in faces:
+        v1, v2, v3 = vertices_physical[face[0]], vertices_physical[face[1]], vertices_physical[face[2]]
+        # 計算三角形面積並投影到原點形成四面體體積
+        cross_product = np.cross(v2 - v1, v3 - v1)
+        triangle_volume = np.abs(np.dot(cross_product, v1)) / 6.0
+        volume += triangle_volume
+
+    if verbose:
+        print(f"  - 平滑體積: {volume:.2f} mm³")
+
+    return volume
+
+
+def calculate_volume_surface_ratio(left_ventricle, right_ventricle, verbose=True):
+    """
+    計算左右腦室的體積與表面積比例（分別計算）
+
+    Args:
+        left_ventricle: 左腦室影像物件
+        right_ventricle: 右腦室影像物件
+        verbose (bool): 是否顯示計算過程資訊
+
+    Returns:
+        dict: 包含體積、表面積和比例計算結果的字典
+    """
+    from skimage.measure import mesh_surface_area
+
+    if verbose:
+        print(f"\n計算體積與表面積比例...")
+
+    def _calculate_volume_and_surface(image_obj, name):
+        """計算單個腦室的體積和表面積"""
+        if verbose:
+            print(f"\n計算 {name} 體積和表面積...")
+
+        # 使用統一的表面提取函數
+        mesh_result = extract_surface_mesh(image_obj, level=0.5, verbose=False)
+
+        # 取得網格資料
+        vertices_physical = mesh_result['vertices_physical']
+        vertices_voxel = mesh_result['vertices_voxel']
+        faces = mesh_result['faces']
+
+        # 計算平滑體積（基於物理座標網格）
+        volume = 0.0
+        for face in faces:
+            v1, v2, v3 = vertices_physical[face[0]], vertices_physical[face[1]], vertices_physical[face[2]]
+            cross_product = np.cross(v2 - v1, v3 - v1)
+            triangle_volume = np.abs(np.dot(cross_product, v1)) / 6.0
+            volume += triangle_volume
+
+        # 計算表面積（基於體素座標網格）
+        surface_area = mesh_surface_area(vertices_voxel, faces)
+
+        # 計算比例
+        ratio = volume / surface_area if surface_area > 0 else 0.0
+
+        if verbose:
+            print(f"  - 體積: {volume:.2f} mm³")
+            print(f"  - 表面積: {surface_area:.2f} mm²")
+            print(f"  - 體積/表面積比例: {ratio:.4f} mm")
+
+        return volume, surface_area, ratio
+
+    # 分別計算左右腦室
+    left_volume, left_surface_area, left_ratio = _calculate_volume_and_surface(left_ventricle, "左腦室")
+    right_volume, right_surface_area, right_ratio = _calculate_volume_and_surface(right_ventricle, "右腦室")
+
+    # 計算整體數據
+    total_volume = left_volume + right_volume
+    total_surface_area = left_surface_area + right_surface_area
+    total_ratio = total_volume / total_surface_area if total_surface_area > 0 else 0.0
+
+    # 計算差異
+    ratio_diff = abs(left_ratio - right_ratio)
+    avg_ratio = (left_ratio + right_ratio) / 2.0
+    ratio_diff_percent = (ratio_diff / avg_ratio * 100.0) if avg_ratio > 0 else 0.0
+
+    if verbose:
+        print(f"\n體積與表面積比例計算總結:")
+        print(f"  左腦室:")
+        print(f"    體積: {left_volume:.2f} mm³")
+        print(f"    表面積: {left_surface_area:.2f} mm²")
+        print(f"    比例: {left_ratio:.4f} mm")
+        print(f"  右腦室:")
+        print(f"    體積: {right_volume:.2f} mm³")
+        print(f"    表面積: {right_surface_area:.2f} mm²")
+        print(f"    比例: {right_ratio:.4f} mm")
+        print(f"  整體:")
+        print(f"    總體積: {total_volume:.2f} mm³")
+        print(f"    總表面積: {total_surface_area:.2f} mm²")
+        print(f"    整體比例: {total_ratio:.4f} mm")
+        print(f"  差異分析:")
+        print(f"    比例差異: {ratio_diff:.4f} mm")
+        print(f"    差異百分比: {ratio_diff_percent:.2f}%")
+
+    return {
+        'left_volume': left_volume,
+        'right_volume': right_volume,
+        'total_volume': total_volume,
+        'left_surface_area': left_surface_area,
+        'right_surface_area': right_surface_area,
+        'total_surface_area': total_surface_area,
+        'left_ratio': left_ratio,
+        'right_ratio': right_ratio,
+        'total_ratio': total_ratio,
+        'ratio_difference': ratio_diff,
+        'ratio_difference_percent': ratio_diff_percent
+    }

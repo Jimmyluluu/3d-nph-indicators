@@ -648,3 +648,155 @@ def print_surface_area_summary(surface_data):
 
 
     print("=" * 70)
+
+
+def visualize_volume_surface_ratio(left_ventricle, right_ventricle, ratio_data,
+                                   output_path="volume_surface_ratio.png", show_plot=True):
+    """
+    視覺化體積與表面積比例分析結果
+
+    Args:
+        left_ventricle: 左腦室影像物件
+        right_ventricle: 右腦室影像物件
+        ratio_data: 體積表面積比例計算結果
+        output_path: 輸出圖片路徑
+        show_plot: 是否顯示互動式圖表
+
+    Returns:
+        plotly figure物件
+    """
+    print(f"\n準備視覺化體積與表面積比例...")
+
+    # 建立圖表
+    fig = go.Figure()
+
+    # 左腦室 - 使用統一表面提取函數
+    try:
+        left_mesh = extract_surface_mesh(left_ventricle, level=0.5, verbose=False)
+        left_verts_physical = left_mesh['vertices_physical']
+        left_faces = left_mesh['faces']
+
+        fig.add_trace(go.Mesh3d(
+            x=left_verts_physical[:, 0],
+            y=left_verts_physical[:, 1],
+            z=left_verts_physical[:, 2],
+            i=left_faces[:, 0],
+            j=left_faces[:, 1],
+            k=left_faces[:, 2],
+            color='blue',
+            opacity=0.4,
+            name=f'Left Ventricle<br>V: {ratio_data["left_volume"]:.1f}mm³<br>S: {ratio_data["left_surface_area"]:.1f}mm²<br>Ratio: {ratio_data["left_ratio"]:.3f}mm',
+            lighting=dict(
+                ambient=0.6,
+                diffuse=0.8,
+                specular=0.2
+            ),
+            flatshading=False
+        ))
+        print(f"✓ 左腦室表面已加入")
+    except Exception as e:
+        print(f"警告:無法提取左腦室表面 - {str(e)}")
+
+    # 右腦室 - 使用統一表面提取函數
+    try:
+        right_mesh = extract_surface_mesh(right_ventricle, level=0.5, verbose=False)
+        right_verts_physical = right_mesh['vertices_physical']
+        right_faces = right_mesh['faces']
+
+        fig.add_trace(go.Mesh3d(
+            x=right_verts_physical[:, 0],
+            y=right_verts_physical[:, 1],
+            z=right_verts_physical[:, 2],
+            i=right_faces[:, 0],
+            j=right_faces[:, 1],
+            k=right_faces[:, 2],
+            color='red',
+            opacity=0.4,
+            name=f'Right Ventricle<br>V: {ratio_data["right_volume"]:.1f}mm³<br>S: {ratio_data["right_surface_area"]:.1f}mm²<br>Ratio: {ratio_data["right_ratio"]:.3f}mm',
+            lighting=dict(
+                ambient=0.6,
+                diffuse=0.8,
+                specular=0.2
+            ),
+            flatshading=False
+        ))
+        print(f"✓ 右腦室表面已加入")
+    except Exception as e:
+        print(f"警告:無法提取右腦室表面 - {str(e)}")
+
+    # 設定圖表佈局
+    fig.update_layout(
+        title=dict(
+            text=f'腦室體積與表面積比例分析<br>' +
+                 f'總體積: {ratio_data["total_volume"]:.1f} mm³, 總表面積: {ratio_data["total_surface_area"]:.1f} mm²<br>' +
+                 f'整體比例: {ratio_data["total_ratio"]:.3f} mm, 差異: {ratio_data["ratio_difference"]:.3f} mm ({ratio_data["ratio_difference_percent"]:.1f}%)',
+            x=0.5,
+            font=dict(size=14)
+        ),
+        scene=dict(
+            xaxis_title='X (mm)',
+            yaxis_title='Y (mm)',
+            zaxis_title='Z (mm)',
+            aspectmode='data'
+        ),
+        width=800,
+        height=600,
+        margin=dict(l=0, r=0, b=0, t=80),
+        legend=dict(
+            x=0.02,
+            y=0.98,
+            bgcolor='rgba(255,255,255,0.8)',
+            bordercolor='black',
+            borderwidth=1
+        )
+    )
+
+    # 顯示或儲存圖表
+    if show_plot:
+        fig.show()
+
+    if output_path:
+        fig.write_html(output_path.replace('.png', '.html'))
+        print(f"✓ 3D 互動圖表已儲存: {output_path.replace('.png', '.html')}")
+
+    return fig
+
+
+def print_volume_surface_ratio_summary(ratio_data):
+    """
+    輸出體積與表面積比例的計算摘要
+
+    Args:
+        ratio_data: 體積表面積比例計算結果字典
+    """
+    print("\n" + "=" * 70)
+    print("📊 體積與表面積比例分析摘要")
+    print("=" * 70)
+
+    print(f"\n🔵 左腦室:")
+    print(f"   體積: {ratio_data['left_volume']:.2f} mm³")
+    print(f"   表面積: {ratio_data['left_surface_area']:.2f} mm²")
+    print(f"   體積/表面積比例: {ratio_data['left_ratio']:.4f} mm")
+
+    print(f"\n🔴 右腦室:")
+    print(f"   體積: {ratio_data['right_volume']:.2f} mm³")
+    print(f"   表面積: {ratio_data['right_surface_area']:.2f} mm²")
+    print(f"   體積/表面積比例: {ratio_data['right_ratio']:.4f} mm")
+
+    print(f"\n📈 整體分析:")
+    print(f"   總體積: {ratio_data['total_volume']:.2f} mm³")
+    print(f"   總表面積: {ratio_data['total_surface_area']:.2f} mm²")
+    print(f"   整體比例: {ratio_data['total_ratio']:.4f} mm")
+
+    print(f"\n⚖️ 差異分析:")
+    print(f"   比例差異: {ratio_data['ratio_difference']:.4f} mm")
+    print(f"   差異百分比: {ratio_data['ratio_difference_percent']:.2f}%")
+
+    # 解釋比例的意義
+    avg_ratio = (ratio_data['left_ratio'] + ratio_data['right_ratio']) / 2
+    print(f"\n💡 比例解釋:")
+    print(f"   體積/表面積比例反映形狀的球形度")
+    print(f"   比例越大，形狀越接近球形")
+    print(f"   平均比例: {avg_ratio:.4f} mm")
+
+    print("=" * 70)
