@@ -264,37 +264,6 @@ def visualize_ventricle_distance(left_ventricle, right_ventricle,
 
     return fig
 
-
-def print_measurement_summary(distance_mm, left_centroid, right_centroid, voxel_size,
-                              cranial_width_mm=None, ratio=None):
-    """
-    格式化輸出測量結果
-
-    Args:
-        distance_mm: 距離(mm)
-        left_centroid: 左質心物理座標(mm)
-        right_centroid: 右質心物理座標(mm)
-        voxel_size: 體素間距
-        cranial_width_mm: 顱內橫向最大寬度(mm)(可選)
-        ratio: 腦室距離/顱內寬度比值(可選)
-    """
-    print("\n" + "=" * 70)
-    print("腦室質心距離測量結果")
-    print("=" * 70)
-    print(f"\n左腦室質心座標 (mm): ({left_centroid[0]:.2f}, {left_centroid[1]:.2f}, {left_centroid[2]:.2f})")
-    print(f"右腦室質心座標 (mm): ({right_centroid[0]:.2f}, {right_centroid[1]:.2f}, {right_centroid[2]:.2f})")
-    print(f"\n體素間距 (mm): {voxel_size[0]:.4f} x {voxel_size[1]:.4f} x {voxel_size[2]:.2f}")
-    print(f"\n左右腦室質心距離: {distance_mm:.2f} mm")
-
-    if cranial_width_mm is not None:
-        print(f"顱內橫向最大寬度: {cranial_width_mm:.2f} mm")
-
-    if ratio is not None:
-        print(f"\n腦室距離/顱內寬度比值: {ratio:.4f} ({ratio*100:.2f}%)")
-
-    print("=" * 70)
-
-
 def visualize_3d_evan_index(left_ventricle, right_ventricle, original_img,
                               evan_data, output_path="evan_index.png",
                               show_plot=True, z_range=(0.4, 0.6), y_percentile=40):
@@ -497,49 +466,6 @@ def visualize_3d_evan_index(left_ventricle, right_ventricle, original_img,
 
     return fig
 
-
-def print_evan_index_summary(evan_data):
-    """
-    格式化輸出 3D Evan Index 測量結果
-
-    Args:
-        evan_data: 3D Evan Index 計算結果字典
-    """
-    print("\n" + "=" * 70)
-    print("3D Evan Index 測量結果")
-    print("=" * 70)
-
-    anterior_distance = evan_data['anterior_horn_distance_mm']
-    cranial_width = evan_data['cranial_width_mm']
-    evan_index = evan_data['evan_index']
-    evan_index_percent = evan_data['evan_index_percent']
-
-    left_endpoint = evan_data['anterior_horn_endpoints']['left']
-    right_endpoint = evan_data['anterior_horn_endpoints']['right']
-
-    left_count = evan_data['anterior_horn_points_count']['left']
-    right_count = evan_data['anterior_horn_points_count']['right']
-
-    voxel_size = evan_data['voxel_size']
-
-    print(f"\n前腳最大距離端點：")
-    print(f"  左側端點 (mm): ({left_endpoint[0]:.2f}, {left_endpoint[1]:.2f}, {left_endpoint[2]:.2f})")
-    print(f"  右側端點 (mm): ({right_endpoint[0]:.2f}, {right_endpoint[1]:.2f}, {right_endpoint[2]:.2f})")
-
-    print(f"\n前腳點數統計：")
-    print(f"  左側前腳點數: {left_count}")
-    print(f"  右側前腳點數: {right_count}")
-
-    print(f"\n體素間距 (mm): {voxel_size[0]:.4f} x {voxel_size[1]:.4f} x {voxel_size[2]:.2f}")
-
-    print(f"\n測量結果：")
-    print(f"  前腳最大距離: {anterior_distance:.2f} mm")
-    print(f"  顱內橫向寬度: {cranial_width:.2f} mm")
-    print(f"  3D Evan Index: {evan_index:.4f} ({evan_index_percent:.2f}%)")
-
-    print("=" * 70)
-
-
 def visualize_surface_area(surface_data, output_path="surface_area.png", show_plot=True):
     """
     使用 Plotly 視覺化平滑後的腦室表面積
@@ -624,31 +550,6 @@ def visualize_surface_area(surface_data, output_path="surface_area.png", show_pl
         fig.show()
 
     return fig
-
-
-def print_surface_area_summary(surface_data):
-    """
-    格式化輸出表面積測量結果
-
-    Args:
-        surface_data (dict): 從 calculate_surface_area 函數回傳的字典
-    """
-    print("\n" + "=" * 70)
-    print("腦室表面積測量結果")
-    print("=" * 70)
-
-    left_area = surface_data['left_surface_area']
-    right_area = surface_data['right_surface_area']
-    total_area = surface_data['total_surface_area']
-
-    print(f"\n測量結果：")
-    print(f"  左腦室表面積: {left_area:.2f} mm^2")
-    print(f"  右腦室表面積: {right_area:.2f} mm^2")
-    print(f"  總表面積: {total_area:.2f} mm^2")
-
-
-    print("=" * 70)
-
 
 def visualize_volume_surface_ratio(left_ventricle, right_ventricle, ratio_data,
                                    output_path="volume_surface_ratio.png", show_plot=True):
@@ -760,43 +661,3 @@ def visualize_volume_surface_ratio(left_ventricle, right_ventricle, ratio_data,
         print(f"✓ 3D 互動圖表已儲存: {output_path.replace('.png', '.html')}")
 
     return fig
-
-
-def print_volume_surface_ratio_summary(ratio_data):
-    """
-    輸出體積與表面積比例的計算摘要
-
-    Args:
-        ratio_data: 體積表面積比例計算結果字典
-    """
-    print("\n" + "=" * 70)
-    print("📊 體積與表面積比例分析摘要")
-    print("=" * 70)
-
-    print(f"\n🔵 左腦室:")
-    print(f"   體積: {ratio_data['left_volume']:.2f} mm³")
-    print(f"   表面積: {ratio_data['left_surface_area']:.2f} mm²")
-    print(f"   體積/表面積比例: {ratio_data['left_ratio']:.4f} mm")
-
-    print(f"\n🔴 右腦室:")
-    print(f"   體積: {ratio_data['right_volume']:.2f} mm³")
-    print(f"   表面積: {ratio_data['right_surface_area']:.2f} mm²")
-    print(f"   體積/表面積比例: {ratio_data['right_ratio']:.4f} mm")
-
-    print(f"\n📈 整體分析:")
-    print(f"   總體積: {ratio_data['total_volume']:.2f} mm³")
-    print(f"   總表面積: {ratio_data['total_surface_area']:.2f} mm²")
-    print(f"   整體比例: {ratio_data['total_ratio']:.4f} mm")
-
-    print(f"\n⚖️ 差異分析:")
-    print(f"   比例差異: {ratio_data['ratio_difference']:.4f} mm")
-    print(f"   差異百分比: {ratio_data['ratio_difference_percent']:.2f}%")
-
-    # 解釋比例的意義
-    avg_ratio = (ratio_data['left_ratio'] + ratio_data['right_ratio']) / 2
-    print(f"\n💡 比例解釋:")
-    print(f"   體積/表面積比例反映形狀的球形度")
-    print(f"   比例越大，形狀越接近球形")
-    print(f"   平均比例: {avg_ratio:.4f} mm")
-
-    print("=" * 70)

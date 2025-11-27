@@ -19,11 +19,15 @@ from model.visualization import (
     visualize_ventricle_distance,
     visualize_3d_evan_index,
     visualize_volume_surface_ratio,
+)
+
+from processors.printers import (
     print_measurement_summary,
     print_evan_index_summary,
     print_surface_area_summary,
     print_volume_surface_ratio_summary
 )
+
 
 
 def process_case_indicator_ratio(data_dir, output_image_path, show_plot=False, verbose=True):

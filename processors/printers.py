@@ -265,3 +265,97 @@ def print_sampling_info(side, original_count, sampled_count, verbose=True):
     """
     if verbose and original_count != sampled_count:
         print(f"  {side}點雲降採樣至 {sampled_count} 點")
+
+
+def print_measurement_summary(distance_mm, left_centroid, right_centroid, voxel_size,
+                              cranial_width_mm=None, ratio=None):
+    """
+    格式化輸出測量結果
+
+    Args:
+        distance_mm: 距離(mm)
+        left_centroid: 左質心物理座標(mm)
+        right_centroid: 右質心物理座標(mm)
+        voxel_size: 體素間距
+        cranial_width_mm: 顱內橫向最大寬度(mm)(可選)
+        ratio: 腦室距離/顱內寬度比值(可選)
+    """
+    print("\n" + "=" * 70)
+    print("腦室質心距離測量結果")
+    print("=" * 70)
+    print(f"\n左腦室質心座標 (mm): ({left_centroid[0]:.2f}, {left_centroid[1]:.2f}, {left_centroid[2]:.2f})")
+    print(f"右腦室質心座標 (mm): ({right_centroid[0]:.2f}, {right_centroid[1]:.2f}, {right_centroid[2]:.2f})")
+    print(f"\n體素間距 (mm): {voxel_size[0]:.4f} x {voxel_size[1]:.4f} x {voxel_size[2]:.2f}")
+    print(f"\n左右腦室質心距離: {distance_mm:.2f} mm")
+
+    if cranial_width_mm is not None:
+        print(f"顱內橫向最大寬度: {cranial_width_mm:.2f} mm")
+
+    if ratio is not None:
+        print(f"\n腦室距離/顱內寬度比值: {ratio:.4f} ({ratio*100:.2f}%)")
+
+    print("=" * 70)
+
+def print_surface_area_summary(surface_data):
+    """
+    格式化輸出表面積測量結果
+
+    Args:
+        surface_data (dict): 從 calculate_surface_area 函數回傳的字典
+    """
+    print("\n" + "=" * 70)
+    print("腦室表面積測量結果")
+    print("=" * 70)
+
+    left_area = surface_data['left_surface_area']
+    right_area = surface_data['right_surface_area']
+    total_area = surface_data['total_surface_area']
+
+    print(f"\n測量結果：")
+    print(f"  左腦室表面積: {left_area:.2f} mm^2")
+    print(f"  右腦室表面積: {right_area:.2f} mm^2")
+    print(f"  總表面積: {total_area:.2f} mm^2")
+
+
+    print("=" * 70)
+
+def print_evan_index_summary(evan_data):
+    """
+    格式化輸出 3D Evan Index 測量結果
+
+    Args:
+        evan_data: 3D Evan Index 計算結果字典
+    """
+    print("\n" + "=" * 70)
+    print("3D Evan Index 測量結果")
+    print("=" * 70)
+
+    anterior_distance = evan_data['anterior_horn_distance_mm']
+    cranial_width = evan_data['cranial_width_mm']
+    evan_index = evan_data['evan_index']
+    evan_index_percent = evan_data['evan_index_percent']
+
+    left_endpoint = evan_data['anterior_horn_endpoints']['left']
+    right_endpoint = evan_data['anterior_horn_endpoints']['right']
+
+    left_count = evan_data['anterior_horn_points_count']['left']
+    right_count = evan_data['anterior_horn_points_count']['right']
+
+    voxel_size = evan_data['voxel_size']
+
+    print(f"\n前腳最大距離端點：")
+    print(f"  左側端點 (mm): ({left_endpoint[0]:.2f}, {left_endpoint[1]:.2f}, {left_endpoint[2]:.2f})")
+    print(f"  右側端點 (mm): ({right_endpoint[0]:.2f}, {right_endpoint[1]:.2f}, {right_endpoint[2]:.2f})")
+
+    print(f"\n前腳點數統計：")
+    print(f"  左側前腳點數: {left_count}")
+    print(f"  右側前腳點數: {right_count}")
+
+    print(f"\n體素間距 (mm): {voxel_size[0]:.4f} x {voxel_size[1]:.4f} x {voxel_size[2]:.2f}")
+
+    print(f"\n測量結果：")
+    print(f"  前腳最大距離: {anterior_distance:.2f} mm")
+    print(f"  顱內橫向寬度: {cranial_width:.2f} mm")
+    print(f"  3D Evan Index: {evan_index:.4f} ({evan_index_percent:.2f}%)")
+
+    print("=" * 70)
