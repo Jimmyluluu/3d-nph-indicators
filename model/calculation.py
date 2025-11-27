@@ -28,16 +28,14 @@ def load_ventricle_pair(left_path, right_path, verbose=True):
     left_img, left_orig_ornt, left_new_ornt = reorient_image(left_path, verbose=False)
     right_img, right_orig_ornt, right_new_ornt = reorient_image(right_path, verbose=False)
 
+    # 輸出載入資訊（如果 verbose=True）
     if verbose:
-        print(f"\n載入左腦室: {left_path}")
-        print(f"  影像形狀: {left_img.shape}")
-        print(f"  原始方向: {left_orig_ornt} → 標準方向: {left_new_ornt}")
-        print(f"  體素間距: {left_img.header.get_zooms()[:3]}")
-
-        print(f"\n載入右腦室: {right_path}")
-        print(f"  影像形狀: {right_img.shape}")
-        print(f"  原始方向: {right_orig_ornt} → 標準方向: {right_new_ornt}")
-        print(f"  體素間距: {right_img.header.get_zooms()[:3]}")
+        from processors.printers import print_ventricle_loading_info
+        print_ventricle_loading_info(
+            left_path, left_img, left_orig_ornt, left_new_ornt,
+            right_path, right_img, right_orig_ornt, right_new_ornt,
+            left_img.shape == right_img.shape, verbose
+        )
 
     # 檢查體素間距是否相同
     left_voxel = left_img.header.get_zooms()[:3]
@@ -46,15 +44,7 @@ def load_ventricle_pair(left_path, right_path, verbose=True):
     if not np.allclose(left_voxel, right_voxel):
         raise ValueError(f"體素間距不一致！左: {left_voxel}, 右: {right_voxel}")
 
-    if verbose:
-        if left_img.shape != right_img.shape:
-            print("\n⚠ 注意：影像形狀不同（可能經過裁剪）")
-            print("  將使用 affine 矩陣轉換到物理空間進行計算")
-        else:
-            print("\n✓ 影像形狀相同")
-
-        print("✓ 座標系統驗證通過！將在物理空間中計算。")
-
+    
     return left_img, right_img
 
 
@@ -75,11 +65,10 @@ def load_original_image(original_path, verbose=True):
     # 載入影像並自動拉正到 RAS+ 方向
     original_img, orig_ornt, new_ornt = reorient_image(original_path, verbose=False)
 
+    # 輸出載入資訊（如果 verbose=True）
     if verbose:
-        print(f"\n載入原始影像: {original_path}")
-        print(f"  影像形狀: {original_img.shape}")
-        print(f"  原始方向: {orig_ornt} → 標準方向: {new_ornt}")
-        print(f"  體素間距: {original_img.header.get_zooms()[:3]}")
+        from processors.printers import print_original_image_loading_info
+        print_original_image_loading_info(original_path, original_img, orig_ornt, new_ornt, verbose)
 
     return original_img
 
@@ -149,7 +138,7 @@ def calculate_centroid_distance(left_ventricle, right_ventricle):
     return distance_mm, left_centroid_physical, right_centroid_physical, voxel_size
 
 
-def calculate_cranial_width(original_img):
+def calculate_cranial_width(original_img, verbose=True):
     """
     計算顱內橫向最大寬度（在每個切面上計算，取最大值）
 
@@ -168,7 +157,10 @@ def calculate_cranial_width(original_img):
     left_point_voxel = None
     right_point_voxel = None
 
-    print(f"\n計算顱內橫向最大寬度...")
+    # 輸出計算資訊（如果 verbose=True）
+    if verbose:
+        from processors.printers import print_cranial_width_calculation_info
+        print_cranial_width_calculation_info(verbose)
 
     # 遍歷每個 Z 切面
     for z in range(data.shape[2]):
@@ -255,9 +247,12 @@ def calculate_anterior_horn_max_distance(left_ventricle, right_ventricle, z_rang
     left_data = get_image_data(left_ventricle)
     right_data = get_image_data(right_ventricle)
 
+    # 輸出計算資訊（如果 verbose=True）
     if verbose:
-        print(f"\n計算腦室前腳最大距離...")
-        print(f"  前腳定義：Z 軸範圍 {z_range[0]*100}%-{z_range[1]*100}%，Y 軸前 {y_percentile}%")
+        from processors.printers import print_anterior_horn_distance_info
+        # 先輸出基本資訊，稍後會輸出完整結果
+        print_anterior_horn_distance_info(z_range, y_percentile, len(left_anterior), len(right_anterior),
+                                          None, None, None, verbose=False)
 
     # 找出所有非零體素的座標（體素空間）
     left_coords_voxel = np.argwhere(left_data > 0)
@@ -288,11 +283,7 @@ def calculate_anterior_horn_max_distance(left_ventricle, right_ventricle, z_rang
     if len(left_anterior) == 0 or len(right_anterior) == 0:
         raise ValueError(f"在 Y 軸前 {y_percentile}% 區域內沒有找到前腳點！請調整 y_percentile 參數。")
 
-    if verbose:
-        print(f"  左側前腳點數：{len(left_anterior)}")
-        print(f"  右側前腳點數：{len(right_anterior)}")
-        print(f"  正在計算最大距離...")
-
+    
     # 將體素座標轉換為物理座標
     left_anterior_homogeneous = np.column_stack([left_anterior, np.ones(len(left_anterior))])
     right_anterior_homogeneous = np.column_stack([right_anterior, np.ones(len(right_anterior))])
@@ -313,14 +304,18 @@ def calculate_anterior_horn_max_distance(left_ventricle, right_ventricle, z_rang
     if len(left_anterior_physical) > max_points:
         indices = np.random.choice(len(left_anterior_physical), max_points, replace=False)
         left_anterior_physical = left_anterior_physical[indices]
+        # 輸出降採樣資訊（如果 verbose=True）
         if verbose:
-            print(f"  左側點雲降採樣至 {max_points} 點")
+            from processors.printers import print_sampling_info
+            print_sampling_info("左側", len(left_anterior_physical), max_points, verbose)
 
     if len(right_anterior_physical) > max_points:
         indices = np.random.choice(len(right_anterior_physical), max_points, replace=False)
         right_anterior_physical = right_anterior_physical[indices]
+        # 輸出降採樣資訊（如果 verbose=True）
         if verbose:
-            print(f"  右側點雲降採樣至 {max_points} 點")
+            from processors.printers import print_sampling_info
+            print_sampling_info("右側", len(right_anterior_physical), max_points, verbose)
 
     # 計算所有點對的距離
     for left_point in left_anterior_physical:
@@ -333,10 +328,15 @@ def calculate_anterior_horn_max_distance(left_ventricle, right_ventricle, z_rang
             left_max_point = left_point
             right_max_point = right_anterior_physical[max_idx]
 
+    # 輸出結果資訊（如果 verbose=True）
     if verbose:
-        print(f"  ✓ 前腳最大距離：{max_distance:.2f} mm")
-        print(f"  左側端點：({left_max_point[0]:.2f}, {left_max_point[1]:.2f}, {left_max_point[2]:.2f})")
-        print(f"  右側端點：({right_max_point[0]:.2f}, {right_max_point[1]:.2f}, {right_max_point[2]:.2f})")
+        from processors.printers import print_anterior_horn_distance_info
+        # 計算原始點數（可能在降採樣前）
+        original_left_count = len(left_anterior)
+        original_right_count = len(right_anterior)
+        print_anterior_horn_distance_info(z_range, y_percentile,
+                                          original_left_count, original_right_count,
+                                          max_distance, left_max_point, right_max_point, verbose)
 
     return max_distance, tuple(left_max_point), tuple(right_max_point), len(left_anterior), len(right_anterior)
 
@@ -391,11 +391,10 @@ def calculate_3d_evan_index(left_ventricle, right_ventricle, original_img, z_ran
     # 取得體素間距
     voxel_size = get_voxel_size(left_ventricle)
 
+    # 輸出 Evan Index 計算結果（如果 verbose=True）
     if verbose:
-        print(f"\n3D Evan Index 計算結果：")
-        print(f"  前腳最大距離：{anterior_distance:.2f} mm")
-        print(f"  顱內寬度：{cranial_width:.2f} mm")
-        print(f"  Evan Index：{evan_index:.4f} ({evan_index_percent:.2f}%)")
+        from processors.printers import print_evan_index_results
+        print_evan_index_results(anterior_distance, cranial_width, evan_index, evan_index_percent, verbose)
 
     return {
         'anterior_horn_distance_mm': anterior_distance,
@@ -433,9 +432,12 @@ def calculate_surface_area(left_ventricle, right_ventricle, verbose=True):
     """
     from skimage.measure import mesh_surface_area
 
-    def _get_surface_area(image_obj, name):
+    def _get_surface_area(image_obj, name, verbose):
+        # 輸出計算資訊（如果 verbose=True）
         if verbose:
-            print(f"\n計算 {name} 表面積...")
+            from processors.printers import print_surface_area_calculation
+            # 暫時先傳 None，稍後會有實際的表面積值
+            print_surface_area_calculation(name, None, verbose=False)
 
         # 使用統一的表面提取函數 (Marching Cubes 已經提供平滑表面)
         mesh_result = extract_surface_mesh(image_obj, level=0.5, verbose=verbose)
@@ -447,21 +449,22 @@ def calculate_surface_area(left_ventricle, right_ventricle, verbose=True):
         # 使用 Marching Cubes 結果計算表面積
         surface_area = mesh_surface_area(vertices_voxel, faces)
 
+        # 輸出表面積結果（如果 verbose=True）
         if verbose:
-            print(f"  - 計算表面積: {surface_area:.2f} mm^2")
+            from processors.printers import print_surface_area_calculation
+            print_surface_area_calculation(name, surface_area, verbose)
 
         return surface_area
 
-    left_area = _get_surface_area(left_ventricle, "左腦室")
-    right_area = _get_surface_area(right_ventricle, "右腦室")
+    left_area = _get_surface_area(left_ventricle, "左腦室", verbose)
+    right_area = _get_surface_area(right_ventricle, "右腦室", verbose)
 
     total_surface_area = left_area + right_area
 
+    # 輸出表面積計算總結（如果 verbose=True）
     if verbose:
-        print("\n表面積計算總結:")
-        print(f"  左腦室表面積: {left_area:.2f} mm^2")
-        print(f"  右腦室表面積: {right_area:.2f} mm^2")
-        print(f"  總表面積: {total_surface_area:.2f} mm^2")
+        from processors.printers import print_surface_area_summary
+        print_surface_area_summary(left_area, right_area, total_surface_area, verbose)
 
     return {
         'left_surface_area': left_area,
@@ -481,8 +484,10 @@ def calculate_volume_smooth(image_obj, verbose=True):
     Returns:
         float: 平滑體積 (mm³)
     """
+    # 輸出計算開始資訊（如果 verbose=True）
     if verbose:
-        print(f"\n計算平滑體積...")
+        from processors.printers import print_volume_calculation
+        print_volume_calculation(None, verbose=False)
 
     # 使用統一的表面提取函數 (與表面積計算相同)
     mesh_result = extract_surface_mesh(image_obj, level=0.5, verbose=False)
@@ -501,8 +506,10 @@ def calculate_volume_smooth(image_obj, verbose=True):
         triangle_volume = np.abs(np.dot(cross_product, v1)) / 6.0
         volume += triangle_volume
 
+    # 輸出體積計算結果（如果 verbose=True）
     if verbose:
-        print(f"  - 平滑體積: {volume:.2f} mm³")
+        from processors.printers import print_volume_calculation
+        print_volume_calculation(volume, verbose)
 
     return volume
 
@@ -521,13 +528,17 @@ def calculate_volume_surface_ratio(left_ventricle, right_ventricle, verbose=True
     """
     from skimage.measure import mesh_surface_area
 
+    # 輸出計算開始資訊（如果 verbose=True）
     if verbose:
-        print(f"\n計算體積與表面積比例...")
+        from processors.printers import print_volume_surface_ratio_start
+        print_volume_surface_ratio_start(verbose)
 
     def _calculate_volume_and_surface(image_obj, name):
         """計算單個腦室的體積和表面積"""
+        # 輸出單一腦室計算開始資訊（如果 verbose=True）
         if verbose:
-            print(f"\n計算 {name} 體積和表面積...")
+            from processors.printers import print_volume_surface_calculation_start
+            print_volume_surface_calculation_start(name, verbose)
 
         # 使用統一的表面提取函數
         mesh_result = extract_surface_mesh(image_obj, level=0.5, verbose=False)
@@ -551,10 +562,10 @@ def calculate_volume_surface_ratio(left_ventricle, right_ventricle, verbose=True
         # 計算比例
         ratio = volume / surface_area if surface_area > 0 else 0.0
 
+        # 輸出單一腦室計算結果（如果 verbose=True）
         if verbose:
-            print(f"  - 體積: {volume:.2f} mm³")
-            print(f"  - 表面積: {surface_area:.2f} mm²")
-            print(f"  - 體積/表面積比例: {ratio:.4f} mm")
+            from processors.printers import print_volume_surface_results
+            print_volume_surface_results(name, volume, surface_area, ratio, verbose)
 
         return volume, surface_area, ratio
 
@@ -572,23 +583,15 @@ def calculate_volume_surface_ratio(left_ventricle, right_ventricle, verbose=True
     avg_ratio = (left_ratio + right_ratio) / 2.0
     ratio_diff_percent = (ratio_diff / avg_ratio * 100.0) if avg_ratio > 0 else 0.0
 
+    # 輸出體積表面積比例計算總結（如果 verbose=True）
     if verbose:
-        print(f"\n體積與表面積比例計算總結:")
-        print(f"  左腦室:")
-        print(f"    體積: {left_volume:.2f} mm³")
-        print(f"    表面積: {left_surface_area:.2f} mm²")
-        print(f"    比例: {left_ratio:.4f} mm")
-        print(f"  右腦室:")
-        print(f"    體積: {right_volume:.2f} mm³")
-        print(f"    表面積: {right_surface_area:.2f} mm²")
-        print(f"    比例: {right_ratio:.4f} mm")
-        print(f"  整體:")
-        print(f"    總體積: {total_volume:.2f} mm³")
-        print(f"    總表面積: {total_surface_area:.2f} mm²")
-        print(f"    整體比例: {total_ratio:.4f} mm")
-        print(f"  差異分析:")
-        print(f"    比例差異: {ratio_diff:.4f} mm")
-        print(f"    差異百分比: {ratio_diff_percent:.2f}%")
+        from processors.printers import print_volume_surface_ratio_summary
+        print_volume_surface_ratio_summary(
+            left_volume, left_surface_area, left_ratio,
+            right_volume, right_surface_area, right_ratio,
+            total_volume, total_surface_area, total_ratio,
+            ratio_diff, ratio_diff_percent, verbose
+        )
 
     return {
         'left_volume': left_volume,
