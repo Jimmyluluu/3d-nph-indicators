@@ -195,8 +195,7 @@ def process_case_volume_surface_ratio(data_dir, output_image_path, show_plot=Fal
         }
 
 
-def process_case_evan_index(data_dir, output_image_path, show_plot=False, verbose=True,
-                            z_range=(0.3, 0.9), y_percentile=4):
+def process_case_evan_index(data_dir, output_image_path, show_plot=False, verbose=True):
     """
     處理單一案例 - 3D Evan Index
 
@@ -205,8 +204,6 @@ def process_case_evan_index(data_dir, output_image_path, show_plot=False, verbos
         output_image_path: 輸出圖片路徑
         show_plot: 是否顯示互動式圖表
         verbose: 是否顯示詳細資訊
-        z_range: Z 軸切面範圍
-        y_percentile: Y 軸前方百分位數
 
     Returns:
         dict: 包含所有測量結果的字典
@@ -242,7 +239,7 @@ def process_case_evan_index(data_dir, output_image_path, show_plot=False, verbos
         # 計算 3D Evan Index
         evan_data = calculate_3d_evan_index(
             left_vent, right_vent, original_img,
-            z_range=z_range, y_percentile=y_percentile, verbose=verbose
+            verbose=verbose
         )
 
         # 輸出摘要
@@ -255,9 +252,7 @@ def process_case_evan_index(data_dir, output_image_path, show_plot=False, verbos
             original_img,
             evan_data,
             output_path=str(output_image_path),
-            show_plot=show_plot,
-            z_range=z_range,
-            y_percentile=y_percentile
+            show_plot=show_plot
         )
 
         # 返回成功結果

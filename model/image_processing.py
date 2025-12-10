@@ -189,11 +189,12 @@ def extract_surface_mesh(image_obj, level=0.5, verbose=False):
     voxel_size = get_voxel_size(image_obj)
 
     try:
-        # 執行 Marching Cubes (已經提供平滑表面)
+        # 執行 Marching Cubes
+        # 注意: 不傳入 spacing，讓它回傳體素索引座標
+        # 之後再透過 affine 矩陣一次轉換為物理座標
         verts, faces, _, _ = measure.marching_cubes(
             image_data,
-            level=level,
-            spacing=voxel_size
+            level=level
         )
 
         # 轉換為物理座標

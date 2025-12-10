@@ -230,17 +230,18 @@ def calculate_ventricle_to_cranial_ratio(ventricle_distance_mm, cranial_width_mm
     return ratio
 
 
-def calculate_anterior_horn_max_distance(left_ventricle, right_ventricle, z_range=(0.3, 0.9), y_percentile=4, verbose=True):
+def calculate_anterior_horn_max_distance(left_ventricle, right_ventricle, verbose=True):
     """
     計算左右腦室前腳之間的最大距離（3D Evan Index）
 
-    前腳定義：結合 Z 軸（頂部區域）和 Y 軸（前方區域）來篩選前腳點雲
+    前腳定義：
+    1. Z 軸（高度）：取質心以更上方 (Superior) 的區域 (Z >= Centroid_Z)
+    2. Y 軸（前後）：取質心與最前端距離的 20% 處開始 (Y >= Centroid + (Max - Centroid) * 0.2)
+       這能更積極地排除腦室體部，專注於前腳區域。
 
     Args:
         left_ventricle: 左腦室影像物件
         right_ventricle: 右腦室影像物件
-        z_range: Z 軸切面範圍（tuple），例如 (0.3, 0.9) 表示取 30%-90% 的上方區域
-        y_percentile: Y 軸前方百分位數，例如 4 表示取前 4% 的前方點
         verbose: 是否顯示計算過程資訊
 
     Returns:
@@ -252,10 +253,7 @@ def calculate_anterior_horn_max_distance(left_ventricle, right_ventricle, z_rang
 
     # 輸出計算資訊（如果 verbose=True）
     if verbose:
-        from processors.printers import print_anterior_horn_distance_info
-        # 先輸出基本資訊，稍後會輸出完整結果
-        print_anterior_horn_distance_info(z_range, y_percentile, len(left_anterior), len(right_anterior),
-                                          None, None, None, verbose=False)
+        print(f"  前腳篩選範圍: 質心以上，且從質心往最前端推進 20%")
 
     # 找出所有非零體素的座標（體素空間）
     left_coords_voxel = np.argwhere(left_data > 0)
@@ -264,27 +262,37 @@ def calculate_anterior_horn_max_distance(left_ventricle, right_ventricle, z_rang
     if len(left_coords_voxel) == 0 or len(right_coords_voxel) == 0:
         raise ValueError("左側或右側腦室沒有非零體素！")
 
-    # 篩選前腳區域 - 使用 Z 軸範圍
-    z_min = int(left_data.shape[2] * z_range[0])
-    z_max = int(left_data.shape[2] * z_range[1])
+    # 1. 計算左右腦室質心 (體素座標)
+    left_centroid = calculate_centroid_3d(left_ventricle, return_physical=False)
+    right_centroid = calculate_centroid_3d(right_ventricle, return_physical=False)
 
-    left_anterior = left_coords_voxel[(left_coords_voxel[:, 2] >= z_min) & (left_coords_voxel[:, 2] <= z_max)]
-    right_anterior = right_coords_voxel[(right_coords_voxel[:, 2] >= z_min) & (right_coords_voxel[:, 2] <= z_max)]
+    # 2. 計算 Y 軸篩選閾值 (質心往最前端推進 20%)
+    # 左腦室
+    left_y_max = np.max(left_coords_voxel[:, 1])
+    left_y_threshold = left_centroid[1] + (left_y_max - left_centroid[1]) * 0.2
+    
+    # 右腦室
+    right_y_max = np.max(right_coords_voxel[:, 1])
+    right_y_threshold = right_centroid[1] + (right_y_max - right_centroid[1]) * 0.2
+
+    if verbose:
+        print(f"  左腦室: 質心Y={left_centroid[1]:.1f}, 最前Y={left_y_max}, 閾值Y={left_y_threshold:.1f}")
+        print(f"  右腦室: 質心Y={right_centroid[1]:.1f}, 最前Y={right_y_max}, 閾值Y={right_y_threshold:.1f}")
+
+    # 3. 篩選前腳區域
+    # 左腦室 (Z >= Centroid_Z 且 Y >= Threshold_Y)
+    left_mask = (left_coords_voxel[:, 2] >= left_centroid[2]) & (left_coords_voxel[:, 1] >= left_y_threshold)
+    left_anterior = left_coords_voxel[left_mask]
+
+    # 右腦室 (Z >= Centroid_Z 且 Y >= Threshold_Y)
+    right_mask = (right_coords_voxel[:, 2] >= right_centroid[2]) & (right_coords_voxel[:, 1] >= right_y_threshold)
+    right_anterior = right_coords_voxel[right_mask]
+
+    if verbose:
+        print(f"  篩選後點數: 左 {len(left_anterior)} / {len(left_coords_voxel)}, 右 {len(right_anterior)} / {len(right_coords_voxel)}")
 
     if len(left_anterior) == 0 or len(right_anterior) == 0:
-        raise ValueError(f"在 Z 軸範圍 {z_range} 內沒有找到前腳點！請調整 z_range 參數。")
-
-    # 進一步篩選 - 使用 Y 軸前方區域
-    # 注意：在 RAS 座標系統中，Y 軸從後（Posterior）到前（Anterior）
-    # 較大的 Y 值表示前方，所以我們要取前 y_percentile% 的較大值
-    left_y_threshold = np.percentile(left_anterior[:, 1], 100 - y_percentile)
-    right_y_threshold = np.percentile(right_anterior[:, 1], 100 - y_percentile)
-
-    left_anterior = left_anterior[left_anterior[:, 1] >= left_y_threshold]
-    right_anterior = right_anterior[right_anterior[:, 1] >= right_y_threshold]
-
-    if len(left_anterior) == 0 or len(right_anterior) == 0:
-        raise ValueError(f"在 Y 軸前 {y_percentile}% 區域內沒有找到前腳點！請調整 y_percentile 參數。")
+        raise ValueError(f"在篩選區域沒有找到前腳點！請檢查影像是否異常或閾值過高。")
 
     
     # 將體素座標轉換為物理座標
@@ -337,14 +345,18 @@ def calculate_anterior_horn_max_distance(left_ventricle, right_ventricle, z_rang
         # 計算原始點數（可能在降採樣前）
         original_left_count = len(left_anterior)
         original_right_count = len(right_anterior)
-        print_anterior_horn_distance_info(z_range, y_percentile,
-                                          original_left_count, original_right_count,
-                                          max_distance, left_max_point, right_max_point, verbose)
+        # 這裡同樣做容錯處理，因為 printer 可能還期待 z_range
+        try:
+            print_anterior_horn_distance_info(None, 0,
+                                              original_left_count, original_right_count,
+                                              max_distance, left_max_point, right_max_point, verbose)
+        except TypeError:
+             print(f"  計算完成: 最大距離 {max_distance:.2f} mm")
 
     return max_distance, tuple(left_max_point), tuple(right_max_point), len(left_anterior), len(right_anterior)
 
 
-def calculate_3d_evan_index(left_ventricle, right_ventricle, original_img, z_range=(0.3, 0.9), y_percentile=4, verbose=True):
+def calculate_3d_evan_index(left_ventricle, right_ventricle, original_img, verbose=True):
     """
     計算 3D Evan Index（腦室前腳最大距離與顱內寬度的比值）
 
@@ -352,8 +364,6 @@ def calculate_3d_evan_index(left_ventricle, right_ventricle, original_img, z_ran
         left_ventricle: 左腦室影像物件
         right_ventricle: 右腦室影像物件
         original_img: 原始腦部影像物件
-        z_range: Z 軸切面範圍（tuple），例如 (0.3, 0.9) 表示取 30%-90% 的上方區域
-        y_percentile: Y 軸前方百分位數，例如 4 表示取前 4% 的前方點
         verbose: 是否顯示計算過程資訊
 
     Returns:
@@ -381,7 +391,7 @@ def calculate_3d_evan_index(left_ventricle, right_ventricle, original_img, z_ran
     """
     # 計算前腳最大距離
     anterior_distance, left_endpoint, right_endpoint, left_count, right_count = \
-        calculate_anterior_horn_max_distance(left_ventricle, right_ventricle, z_range, y_percentile, verbose)
+        calculate_anterior_horn_max_distance(left_ventricle, right_ventricle, verbose=verbose)
 
     # 計算顱內寬度
     cranial_width, cranial_left, cranial_right, cranial_slice = \

@@ -71,22 +71,6 @@ def main():
         help='跳過標記為 _not_ok 的資料夾（預設: True）'
     )
 
-    batch_parser.add_argument(
-        '--z-range',
-        nargs=2,
-        type=float,
-        default=[0.3, 0.9],
-        metavar=('MIN', 'MAX'),
-        help='Z 軸切面範圍（僅用於 evan_index，預設: 0.3 0.9）'
-    )
-
-    batch_parser.add_argument(
-        '--y-percentile',
-        type=int,
-        default=4,
-        help='Y 軸前方百分位數（僅用於 evan_index，預設: 4）'
-    )
-
     # Surface Area 相關參數
     batch_parser.add_argument(
         '--smoothing-iterations', type=int, default=100,
@@ -128,22 +112,6 @@ def main():
         help='顯示互動式圖表'
     )
 
-    single_parser.add_argument(
-        '--z-range',
-        nargs=2,
-        type=float,
-        default=[0.3, 0.9],
-        metavar=('MIN', 'MAX'),
-        help='Z 軸切面範圍（僅用於 evan_index，預設: 0.3 0.9）'
-    )
-
-    single_parser.add_argument(
-        '--y-percentile',
-        type=int,
-        default=4,
-        help='Y 軸前方百分位數（僅用於 evan_index，預設: 4）'
-    )
-
     # Surface Area 相關參數
     single_parser.add_argument(
         '--smoothing-iterations', type=int, default=100,
@@ -171,7 +139,7 @@ def main():
         print(f"跳過 _not_ok: {'是' if args.skip_not_ok else '否'}")
 
         if args.type == 'evan_index':
-            print(f"前腳定義 - Z 範圍: {args.z_range[0]*100}%-{args.z_range[1]*100}%, Y 百分位: {args.y_percentile}%")
+            print(f"前腳定義: 全自動 - 質心前上方象限 (Centroid Anterior-Superior)")
 
         print("=" * 70)
         print()
@@ -180,9 +148,7 @@ def main():
         batch_process(
             data_dir=args.data_dir,
             indicator_type=args.type,
-            skip_not_ok=args.skip_not_ok,
-            z_range=tuple(args.z_range),
-            y_percentile=args.y_percentile
+            skip_not_ok=args.skip_not_ok
         )
 
     elif args.command == 'single':
@@ -204,7 +170,7 @@ def main():
         print(f"輸出路徑: {output_path}")
 
         if args.type == 'evan_index':
-            print(f"前腳定義 - Z 範圍: {args.z_range[0]*100}%-{args.z_range[1]*100}%, Y 百分位: {args.y_percentile}%")
+            print(f"前腳定義: 全自動 - 質心前上方象限 (Centroid Anterior-Superior)")
 
         print("=" * 70)
         print()
@@ -222,9 +188,7 @@ def main():
                 data_dir=str(case_dir),
                 output_image_path=str(output_path),
                 show_plot=args.show_plot,
-                verbose=True,
-                z_range=tuple(args.z_range),
-                y_percentile=args.y_percentile
+                verbose=True
             )
         elif args.type == 'surface_area':
             result = process_case_surface_area(

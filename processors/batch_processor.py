@@ -71,8 +71,7 @@ def scan_data_directory(base_dir, indicator_type, skip_not_ok=True):
     return sorted(valid_dirs)
 
 
-def batch_process(data_dir, indicator_type="centroid_ratio", skip_not_ok=True,
-                  z_range=(0.3, 0.9), y_percentile=4):
+def batch_process(data_dir, indicator_type="centroid_ratio", skip_not_ok=True):
     """
     批次處理所有案例
 
@@ -80,8 +79,6 @@ def batch_process(data_dir, indicator_type="centroid_ratio", skip_not_ok=True,
         data_dir: 資料目錄路徑
         indicator_type: 指標類型
         skip_not_ok: 是否跳過標記為 _not_ok 的資料夾
-        z_range: Z 軸切面範圍（僅用於 evan_index）
-        y_percentile: Y 軸前方百分位數（僅用於 evan_index）
     """
     # 設定輸出目錄
     output_dir = f"result/{indicator_type}"
@@ -99,7 +96,7 @@ def batch_process(data_dir, indicator_type="centroid_ratio", skip_not_ok=True,
         process_func = process_case_indicator_ratio
         indicator_name = "腦室質心距離比值"
     elif indicator_type == "evan_index":
-        process_func = lambda data_dir, output_path, show_plot=False, verbose=True: process_case_evan_index(data_dir, output_path, show_plot=show_plot, verbose=verbose, z_range=z_range, y_percentile=y_percentile)
+        process_func = lambda data_dir, output_path, show_plot=False, verbose=True: process_case_evan_index(data_dir, output_path, show_plot=show_plot, verbose=verbose)
         indicator_name = "3D Evan Index"
     elif indicator_type == "surface_area":
         process_func = lambda data_dir, output_path, show_plot=False, verbose=True: process_case_surface_area(data_dir, output_path, show_plot=show_plot, verbose=verbose)
@@ -117,7 +114,7 @@ def batch_process(data_dir, indicator_type="centroid_ratio", skip_not_ok=True,
         logger.info(f"跳過 _not_ok: {skip_not_ok}")
 
         if indicator_type == "evan_index":
-            logger.info(f"前腳定義 - Z 範圍: {z_range}, Y 百分位: {y_percentile}")
+            logger.info(f"前腳定義: 全自動 - 質心前上方象限 (Centroid Anterior-Superior)")
 
         # 掃描資料目錄
         try:

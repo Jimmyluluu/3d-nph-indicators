@@ -266,7 +266,7 @@ def visualize_ventricle_distance(left_ventricle, right_ventricle,
 
 def visualize_3d_evan_index(left_ventricle, right_ventricle, original_img,
                               evan_data, output_path="evan_index.png",
-                              show_plot=True, z_range=(0.4, 0.6), y_percentile=40):
+                              show_plot=True):
     """
     視覺化 3D Evan Index（腦室前腳最大距離與顱內寬度）
 
@@ -277,12 +277,13 @@ def visualize_3d_evan_index(left_ventricle, right_ventricle, original_img,
         evan_data: 3D Evan Index 計算結果字典
         output_path: 輸出圖片路徑
         show_plot: 是否顯示互動式圖表
-        z_range: Z 軸切面範圍（用於篩選前腳點雲顯示）
-        y_percentile: Y 軸前方百分位數（用於篩選前腳點雲顯示）
 
     Returns:
         plotly figure物件
     """
+    # 延遲匯入以避免循環引用
+    from model.calculation import calculate_centroid_3d
+
     # 取得資料
     left_data = get_image_data(left_ventricle)
     right_data = get_image_data(right_ventricle)
@@ -371,6 +372,29 @@ def visualize_3d_evan_index(left_ventricle, right_ventricle, original_img,
         ))
     except Exception as e:
         print(f"警告: 無法提取右腦室表面 - {str(e)}")
+
+    # 計算並顯示質心（前腳篩選的參考點）
+    try:
+        left_centroid = calculate_centroid_3d(left_ventricle, return_physical=True)
+        right_centroid = calculate_centroid_3d(right_ventricle, return_physical=True)
+
+        fig.add_trace(go.Scatter3d(
+            x=[left_centroid[0]], y=[left_centroid[1]], z=[left_centroid[2]],
+            mode='markers',
+            marker=dict(size=6, color='yellow', symbol='x'),
+            name='Left Centroid (Cut-off)',
+            showlegend=True
+        ))
+        fig.add_trace(go.Scatter3d(
+            x=[right_centroid[0]], y=[right_centroid[1]], z=[right_centroid[2]],
+            mode='markers',
+            marker=dict(size=6, color='yellow', symbol='x'),
+            name='Right Centroid (Cut-off)',
+            showlegend=True
+        ))
+    except Exception as e:
+        print(f"警告: 無法計算質心 - {str(e)}")
+
 
     # 前腳最大距離的端點標記
     left_endpoint = evan_data['anterior_horn_endpoints']['left']
