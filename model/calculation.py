@@ -232,12 +232,17 @@ def calculate_ventricle_to_cranial_ratio(ventricle_distance_mm, cranial_width_mm
 
 def calculate_anterior_horn_max_distance(left_ventricle, right_ventricle, verbose=True):
     """
-    計算左右腦室前腳之間的最大距離（3D Evan Index）
+    計算左右腦室前腳之間的橫向距離（3D Evan Index）
 
-    前腳定義：
-    1. Z 軸（高度）：取質心以更上方 (Superior) 的區域 (Z >= Centroid_Z)
-    2. Y 軸（前後）：取質心與最前端距離的 20% 處開始 (Y >= Centroid + (Max - Centroid) * 0.2)
-       這能更積極地排除腦室體部，專注於前腳區域。
+    測量方式：
+    1. 篩選前腳區域（質心以上、前 20%）
+    2. 左前腳取最左邊（X 最小）的點
+    3. 右前腳取最右邊（X 最大）的點
+    4. 計算這兩點之間的距離
+
+    前腳篩選條件：
+    - Y 軸（前後）：取質心往最前端推進 70% 處開始（只取前 30% 區域）
+    - Z 軸（高度）：過濾最低 15% 的異常值（保留 15-100% 範圍）
 
     Args:
         left_ventricle: 左腦室影像物件
@@ -245,7 +250,7 @@ def calculate_anterior_horn_max_distance(left_ventricle, right_ventricle, verbos
         verbose: 是否顯示計算過程資訊
 
     Returns:
-        tuple: (最大距離(mm), 左側端點座標(mm), 右側端點座標(mm), 左側前腳點數, 右側前腳點數)
+        tuple: (距離(mm), 左側端點座標(mm), 右側端點座標(mm), 左側前腳點數, 右側前腳點數)
     """
     # 取得資料
     left_data = get_image_data(left_ventricle)
@@ -253,7 +258,7 @@ def calculate_anterior_horn_max_distance(left_ventricle, right_ventricle, verbos
 
     # 輸出計算資訊（如果 verbose=True）
     if verbose:
-        print(f"  前腳篩選範圍: 質心以上，且從質心往最前端推進 20%")
+        print(f"  前腳篩選範圍: Y 軸前 30% 區域")
 
     # 找出所有非零體素的座標（體素空間）
     left_coords_voxel = np.argwhere(left_data > 0)
@@ -266,33 +271,35 @@ def calculate_anterior_horn_max_distance(left_ventricle, right_ventricle, verbos
     left_centroid = calculate_centroid_3d(left_ventricle, return_physical=False)
     right_centroid = calculate_centroid_3d(right_ventricle, return_physical=False)
 
-    # 2. 計算 Y 軸篩選閾值 (質心往最前端推進 20%)
-    # 左腦室
+    # 2. 計算 Y 軸篩選閾值（質心往最前端推進 70%，取前 30% 區域）
     left_y_max = np.max(left_coords_voxel[:, 1])
-    left_y_threshold = left_centroid[1] + (left_y_max - left_centroid[1]) * 0.2
+    left_y_threshold = left_centroid[1] + (left_y_max - left_centroid[1]) * 0.7
     
-    # 右腦室
     right_y_max = np.max(right_coords_voxel[:, 1])
-    right_y_threshold = right_centroid[1] + (right_y_max - right_centroid[1]) * 0.2
-
+    right_y_threshold = right_centroid[1] + (right_y_max - right_centroid[1]) * 0.7
+    
+    # 3. 第一階段：Y 軸篩選出前角區域
+    left_y_mask = left_coords_voxel[:, 1] >= left_y_threshold
+    left_anterior_y = left_coords_voxel[left_y_mask]
+    
+    right_y_mask = right_coords_voxel[:, 1] >= right_y_threshold
+    right_anterior_y = right_coords_voxel[right_y_mask]
+    
+    # 4. 第二階段：Z 軸百分位數過濾（排除下方極端異常點）
+    # 使用 15-100%：只過濾最低 15%（異常通常在下方），上方不過濾
+    left_z_p15 = np.percentile(left_anterior_y[:, 2], 15)
+    right_z_p15 = np.percentile(right_anterior_y[:, 2], 15)
+    
+    # 過濾 Z 軸下方異常值
+    left_z_mask = left_anterior_y[:, 2] >= left_z_p15
+    left_anterior = left_anterior_y[left_z_mask]
+    
+    right_z_mask = right_anterior_y[:, 2] >= right_z_p15
+    right_anterior = right_anterior_y[right_z_mask]
+    
     if verbose:
-        print(f"  左腦室: 質心Y={left_centroid[1]:.1f}, 最前Y={left_y_max}, 閾值Y={left_y_threshold:.1f}")
-        print(f"  右腦室: 質心Y={right_centroid[1]:.1f}, 最前Y={right_y_max}, 閾值Y={right_y_threshold:.1f}")
-
-    # 3. 篩選前腳區域
-    # 左腦室 (Z >= Centroid_Z 且 Y >= Threshold_Y)
-    left_mask = (left_coords_voxel[:, 2] >= left_centroid[2]) & (left_coords_voxel[:, 1] >= left_y_threshold)
-    left_anterior = left_coords_voxel[left_mask]
-
-    # 右腦室 (Z >= Centroid_Z 且 Y >= Threshold_Y)
-    right_mask = (right_coords_voxel[:, 2] >= right_centroid[2]) & (right_coords_voxel[:, 1] >= right_y_threshold)
-    right_anterior = right_coords_voxel[right_mask]
-
-    if verbose:
-        print(f"  篩選後點數: 左 {len(left_anterior)} / {len(left_coords_voxel)}, 右 {len(right_anterior)} / {len(right_coords_voxel)}")
-
-    if len(left_anterior) == 0 or len(right_anterior) == 0:
-        raise ValueError(f"在篩選區域沒有找到前腳點！請檢查影像是否異常或閾值過高。")
+        print(f"  第一階段 Y 軸篩選（前 30%）: 左 {len(left_anterior_y)}, 右 {len(right_anterior_y)}")
+        print(f"  第二階段 Z 軸過濾（> 15%）: 左 {len(left_anterior)}, 右 {len(right_anterior)}")
 
     
     # 將體素座標轉換為物理座標
@@ -302,58 +309,31 @@ def calculate_anterior_horn_max_distance(left_ventricle, right_ventricle, verbos
     left_anterior_physical = (left_ventricle.affine @ left_anterior_homogeneous.T).T[:, :3]
     right_anterior_physical = (right_ventricle.affine @ right_anterior_homogeneous.T).T[:, :3]
 
-    # 計算左右前腳之間所有點對的距離，找出最大值
-    max_distance = 0
-    left_max_point = None
-    right_max_point = None
-
-    # 採用優化策略：不需要計算所有點對，可以用採樣或其他優化方法
-    # 這裡為了準確性，我們計算所有點對（對於前腳點雲，數量應該是可控的）
-
-    # 如果點太多，進行降採樣
-    max_points = 5000
-    if len(left_anterior_physical) > max_points:
-        indices = np.random.choice(len(left_anterior_physical), max_points, replace=False)
-        left_anterior_physical = left_anterior_physical[indices]
-        # 輸出降採樣資訊（如果 verbose=True）
-        if verbose:
-            from processors.printers import print_sampling_info
-            print_sampling_info("左側", len(left_anterior_physical), max_points, verbose)
-
-    if len(right_anterior_physical) > max_points:
-        indices = np.random.choice(len(right_anterior_physical), max_points, replace=False)
-        right_anterior_physical = right_anterior_physical[indices]
-        # 輸出降採樣資訊（如果 verbose=True）
-        if verbose:
-            from processors.printers import print_sampling_info
-            print_sampling_info("右側", len(right_anterior_physical), max_points, verbose)
-
-    # 計算所有點對的距離
-    for left_point in left_anterior_physical:
-        # 計算該左側點到所有右側點的距離
-        distances = np.linalg.norm(right_anterior_physical - left_point, axis=1)
-        max_idx = np.argmax(distances)
-
-        if distances[max_idx] > max_distance:
-            max_distance = distances[max_idx]
-            left_max_point = left_point
-            right_max_point = right_anterior_physical[max_idx]
+    # 找左前腳最左邊（X 最小）的點，右前腳最右邊（X 最大）的點
+    # 這符合傳統 Evan Index 的測量方式
+    
+    # 在物理座標中，X 軸是左右方向（RAS+ 座標系）
+    # 左腦室在右側（X 較大），右腦室在左側（X 較小）
+    # 但我們要找的是：左前腳最外側（X 最小）和右前腳最外側（X 最大）
+    
+    # 左前腳：找 X 最小的點（最左側）
+    left_x_min_idx = np.argmin(left_anterior_physical[:, 0])
+    left_extreme_point = left_anterior_physical[left_x_min_idx]
+    
+    # 右前腳：找 X 最大的點（最右側）
+    right_x_max_idx = np.argmax(right_anterior_physical[:, 0])
+    right_extreme_point = right_anterior_physical[right_x_max_idx]
+    
+    # 計算兩個極值點之間的距離
+    distance = np.linalg.norm(right_extreme_point - left_extreme_point)
 
     # 輸出結果資訊（如果 verbose=True）
     if verbose:
-        from processors.printers import print_anterior_horn_distance_info
-        # 計算原始點數（可能在降採樣前）
-        original_left_count = len(left_anterior)
-        original_right_count = len(right_anterior)
-        # 這裡同樣做容錯處理，因為 printer 可能還期待 z_range
-        try:
-            print_anterior_horn_distance_info(None, 0,
-                                              original_left_count, original_right_count,
-                                              max_distance, left_max_point, right_max_point, verbose)
-        except TypeError:
-             print(f"  計算完成: 最大距離 {max_distance:.2f} mm")
+        print(f"  左前腳最左點: ({left_extreme_point[0]:.2f}, {left_extreme_point[1]:.2f}, {left_extreme_point[2]:.2f}) mm")
+        print(f"  右前腳最右點: ({right_extreme_point[0]:.2f}, {right_extreme_point[1]:.2f}, {right_extreme_point[2]:.2f}) mm")
+        print(f"  前腳橫向距離: {distance:.2f} mm")
 
-    return max_distance, tuple(left_max_point), tuple(right_max_point), len(left_anterior), len(right_anterior)
+    return distance, tuple(left_extreme_point), tuple(right_extreme_point), len(left_anterior), len(right_anterior)
 
 
 def calculate_3d_evan_index(left_ventricle, right_ventricle, original_img, verbose=True):
