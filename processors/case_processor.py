@@ -28,23 +28,26 @@ from processors.printers import (
 )
 
 
-def find_case_files(data_dir, require_original=True):
+def find_case_files(data_dir, require_original=True, require_falx=False):
     """
     尋找案例資料夾中的腦室和原始影像檔案路徑
     
     支援兩種命名模式：
-    - 標準命名: Ventricle_L.nii.gz, Ventricle_R.nii.gz, original.nii.gz
-    - data_ 命名: mask_Ventricle_L_{num}.nii.gz, mask_Ventricle_R_{num}.nii.gz, original_{num}.nii.gz
+    - 標準命名: Ventricle_L.nii.gz, Ventricle_R.nii.gz, original.nii.gz, falx.nii.gz
+    - data_ 命名: mask_Ventricle_L_{num}.nii.gz, mask_Ventricle_R_{num}.nii.gz, 
+                  original_{num}.nii.gz, mask_Falx_{num}.nii.gz
     
     Args:
         data_dir: 資料目錄路徑
         require_original: 是否需要原始影像檔案
+        require_falx: 是否需要 Falx 檔案
         
     Returns:
         dict: 包含檔案路徑的字典
             - 'left_path': 左腦室檔案路徑
             - 'right_path': 右腦室檔案路徑
             - 'original_path': 原始影像檔案路徑 (如果 require_original=True)
+            - 'falx_path': Falx 檔案路徑 (如果 require_falx=True)
             
     Raises:
         FileNotFoundError: 如果找不到必要的檔案
@@ -56,6 +59,7 @@ def find_case_files(data_dir, require_original=True):
     left_path = data_path / "Ventricle_L.nii.gz"
     right_path = data_path / "Ventricle_R.nii.gz"
     original_path = data_path / "original.nii.gz"
+    falx_path = data_path / "falx.nii.gz"
     
     # 檢查是否為 data_ 開頭的命名模式
     if case_name.startswith('data_'):
@@ -63,11 +67,13 @@ def find_case_files(data_dir, require_original=True):
         left_path_alt = data_path / f"mask_Ventricle_L_{data_num}.nii.gz"
         right_path_alt = data_path / f"mask_Ventricle_R_{data_num}.nii.gz"
         original_path_alt = data_path / f"original_{data_num}.nii.gz"
+        falx_path_alt = data_path / f"mask_Falx_{data_num}.nii.gz"
         
         if left_path_alt.exists():
             left_path = left_path_alt
             right_path = right_path_alt
             original_path = original_path_alt
+            falx_path = falx_path_alt
     
     # 驗證檔案存在
     if not left_path.exists() or not right_path.exists():
@@ -76,6 +82,9 @@ def find_case_files(data_dir, require_original=True):
     if require_original and not original_path.exists():
         raise FileNotFoundError(f"在 {data_dir} 中找不到原始影像檔案")
     
+    if require_falx and not falx_path.exists():
+        raise FileNotFoundError(f"在 {data_dir} 中找不到 Falx 檔案")
+    
     result = {
         'left_path': left_path,
         'right_path': right_path,
@@ -83,6 +92,9 @@ def find_case_files(data_dir, require_original=True):
     
     if require_original:
         result['original_path'] = original_path
+    
+    if require_falx:
+        result['falx_path'] = falx_path
     
     return result
 
@@ -173,6 +185,8 @@ def process_case_evan_index(data_dir, output_image_path, show_plot=False, verbos
     """
     處理單一案例 - 3D Evan Index
 
+    使用 Falx（大腦鐮）作為中線參考平面計算前腳距離（如果有 Falx 檔案）。
+
     Args:
         data_dir: 資料目錄路徑
         output_image_path: 輸出圖片路徑
@@ -183,8 +197,17 @@ def process_case_evan_index(data_dir, output_image_path, show_plot=False, verbos
         dict: 包含所有測量結果的字典
     """
     try:
-        # 使用統一的檔案路徑查找函數
-        files = find_case_files(data_dir, require_original=True)
+        # 嘗試查找包含 Falx 的檔案
+        try:
+            files = find_case_files(data_dir, require_original=True, require_falx=True)
+            has_falx = True
+        except FileNotFoundError:
+            # 如果找不到 Falx，退回到只載入腦室和原始影像
+            files = find_case_files(data_dir, require_original=True, require_falx=False)
+            has_falx = False
+            if verbose:
+                print("  ⚠️ 找不到 Falx 檔案，使用傳統質心方法")
+
         left_path = files['left_path']
         right_path = files['right_path']
         original_path = files['original_path']
@@ -197,9 +220,16 @@ def process_case_evan_index(data_dir, output_image_path, show_plot=False, verbos
         # 載入原始影像（自動拉正到 RAS+ 方向）
         original_img = load_original_image(str(original_path), verbose=verbose)
 
-        # 計算 3D Evan Index
+        # 載入 Falx 影像（如果有的話）
+        falx_img = None
+        if has_falx:
+            from model.calculation import load_falx_image
+            falx_img = load_falx_image(str(files['falx_path']), verbose=verbose)
+
+        # 計算 3D Evan Index（使用 Falx-based 或傳統方法）
         evan_data = calculate_3d_evan_index(
             left_vent, right_vent, original_img,
+            falx_img=falx_img,
             verbose=verbose
         )
 
@@ -207,13 +237,16 @@ def process_case_evan_index(data_dir, output_image_path, show_plot=False, verbos
         if verbose:
             print_evan_index_summary(evan_data)
 
-        # 視覺化
+        # 視覺化（傳遞 Falx 平面資訊）
+        falx_plane = evan_data.get('falx_plane', None)
         visualize_3d_evan_index(
             left_vent, right_vent,
             original_img,
             evan_data,
             output_path=str(output_image_path),
-            show_plot=show_plot
+            show_plot=show_plot,
+            falx_img=falx_img,
+            falx_plane=falx_plane
         )
 
         # 返回成功結果
@@ -226,7 +259,8 @@ def process_case_evan_index(data_dir, output_image_path, show_plot=False, verbos
             'anterior_horn_endpoints': evan_data['anterior_horn_endpoints'],
             'cranial_width_endpoints': evan_data['cranial_width_endpoints'],
             'anterior_horn_points_count': evan_data['anterior_horn_points_count'],
-            'voxel_size': evan_data['voxel_size']
+            'voxel_size': evan_data['voxel_size'],
+            'method': evan_data.get('method', 'centroid')
         }
 
     except Exception as e:

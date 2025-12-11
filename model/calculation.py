@@ -76,6 +76,236 @@ def load_original_image(original_path, verbose=True):
     return original_img
 
 
+def load_falx_image(falx_path, verbose=True):
+    """
+    載入 Falx（大腦鐮）mask 並自動拉正到 RAS+ 方向
+
+    Args:
+        falx_path: Falx mask 檔案路徑
+        verbose: 是否顯示載入資訊
+
+    Returns:
+        nibabel.Nifti1Image: 已拉正到 RAS+ 方向的影像物件
+    """
+    # 載入影像並自動拉正到 RAS+ 方向
+    falx_img, orig_ornt, new_ornt = reorient_image(falx_path, verbose=False)
+
+    if verbose:
+        print(f"  Falx 影像已載入: {falx_path}")
+        print(f"    形狀: {falx_img.shape}, 體素: {falx_img.header.get_zooms()[:3]}")
+
+    return falx_img
+
+
+def fit_falx_plane(falx_img, verbose=True):
+    """
+    使用 Marching Cubes 提取平滑表面，並用 SVD 擬合 Falx（大腦鐮）平面
+
+    Args:
+        falx_img: Falx mask 影像物件（已拉正到 RAS+）
+        verbose: 是否顯示擬合資訊
+
+    Returns:
+        dict: 平面參數
+            - 'normal': 法向量 (A, B, C)
+            - 'center': 中心點座標
+            - 'A', 'B', 'C', 'D': 平面方程式參數 (Ax + By + Cz + D = 0)
+            - 'y_range': (Y_min, Y_max) Falx 的 Y 軸範圍
+            - 'surface_vertices': 平滑後的表面頂點
+            - 'surface_faces': 表面三角面
+    """
+    # 使用 Marching Cubes 提取平滑表面
+    falx_mesh = extract_surface_mesh(falx_img, level=0.5, verbose=False)
+    falx_points = falx_mesh['vertices_physical']
+    
+    if len(falx_points) == 0:
+        raise ValueError("Falx mask 沒有提取到表面頂點！")
+
+    # 使用 SVD 擬合平面（等效於 PCA）
+    # 1. 計算中心點
+    center = np.mean(falx_points, axis=0)
+    
+    # 2. 中心化數據
+    centered_points = falx_points - center
+    
+    # 3. SVD 分解：U, S, Vt = svd(centered_points)
+    # Vt 的最後一行對應最小奇異值，即為法向量
+    _, _, Vt = np.linalg.svd(centered_points, full_matrices=False)
+    
+    # 法向量 = 最小奇異值對應的向量（Vt 的最後一行）
+    normal = Vt[2]
+
+    # 確保法向量指向 X 正方向（左右方向）
+    if normal[0] < 0:
+        normal = -normal
+
+    # 平面方程: Ax + By + Cz + D = 0
+    # D = -(A*x0 + B*y0 + C*z0)
+    A, B, C = normal
+    D = -np.dot(normal, center)
+
+    # Y 軸範圍
+    y_min = np.min(falx_points[:, 1])
+    y_max = np.max(falx_points[:, 1])
+
+    if verbose:
+        print(f"  Falx 平面擬合完成 (Marching Cubes + SVD):")
+        print(f"    表面頂點數: {len(falx_points)}")
+        print(f"    法向量: ({A:.4f}, {B:.4f}, {C:.4f})")
+        print(f"    中心點: ({center[0]:.2f}, {center[1]:.2f}, {center[2]:.2f}) mm")
+        print(f"    Y 軸範圍: {y_min:.2f} - {y_max:.2f} mm")
+
+    return {
+        'normal': normal,
+        'center': center,
+        'A': A, 'B': B, 'C': C, 'D': D,
+        'y_range': (y_min, y_max),
+        'falx_points': falx_points,
+        'surface_vertices': falx_mesh['vertices_physical'],
+        'surface_faces': falx_mesh['faces']
+    }
+
+
+def calculate_anterior_horn_distance_with_falx(left_ventricle, right_ventricle, falx_plane, verbose=True):
+    """
+    使用 Falx 平面計算前腳橫向距離
+
+    計算流程:
+    1. 合併左右腦室點雲
+    2. Y 軸篩選: 使用腦室質心往前推進 70% 處開始（取前 30% 區域）
+    3. Z 軸過濾: 排除最低 15%
+    4. 使用 Falx 平面分左右側，取各側最大 X 距離相加
+
+    Args:
+        left_ventricle: 左腦室影像物件
+        right_ventricle: 右腦室影像物件
+        falx_plane: fit_falx_plane() 返回的平面參數（用於 X 軸分側）
+        verbose: 是否顯示計算過程
+
+    Returns:
+        tuple: (距離(mm), 左側端點座標, 右側端點座標, 左側點數, 右側點數)
+    """
+    # 取得 Falx 平面參數（用於 X 軸分側）
+    A, B, C, D = falx_plane['A'], falx_plane['B'], falx_plane['C'], falx_plane['D']
+    norm = np.sqrt(A**2 + B**2 + C**2)
+
+    # 合併左右腦室點雲
+    left_data = get_image_data(left_ventricle)
+    right_data = get_image_data(right_ventricle)
+
+    left_coords_voxel = np.argwhere(left_data > 0)
+    right_coords_voxel = np.argwhere(right_data > 0)
+
+    # 轉換為物理座標
+    left_homogeneous = np.column_stack([left_coords_voxel, np.ones(len(left_coords_voxel))])
+    left_points = (left_ventricle.affine @ left_homogeneous.T).T[:, :3]
+
+    right_homogeneous = np.column_stack([right_coords_voxel, np.ones(len(right_coords_voxel))])
+    right_points = (right_ventricle.affine @ right_homogeneous.T).T[:, :3]
+
+    # 合併所有腦室點
+    all_points = np.vstack([left_points, right_points])
+    
+    # 計算腦室質心（用於 Y 軸篩選）
+    left_centroid = np.mean(left_points, axis=0)
+    right_centroid = np.mean(right_points, axis=0)
+    
+    # 計算合併後的 Y 軸範圍
+    all_y_max = np.max(all_points[:, 1])
+    avg_centroid_y = (left_centroid[1] + right_centroid[1]) / 2
+
+    if verbose:
+        print(f"  前腳篩選範圍: 基於腦室質心的前 30%")
+
+    # 階段 1: Y 軸 ROI 區域篩選（使用腦室質心，與傳統方法一致）
+    # 取質心往前推進 70% 處開始（只取前 30% 區域）
+    y_threshold = avg_centroid_y + 0.7 * (all_y_max - avg_centroid_y)
+    y_mask = all_points[:, 1] >= y_threshold
+    anterior_points = all_points[y_mask]
+
+    if verbose:
+        print(f"  第一階段 Y 軸篩選: {len(anterior_points)} / {len(all_points)} 點")
+
+    if len(anterior_points) == 0:
+        raise ValueError("Y 軸篩選後沒有點！請檢查影像。")
+
+    # 階段 2: Z 軸雜訊過濾（排除最低 15%）
+    z_p15 = np.percentile(anterior_points[:, 2], 15)
+    z_mask = anterior_points[:, 2] >= z_p15
+    filtered_points = anterior_points[z_mask]
+
+    if verbose:
+        print(f"  第二階段 Z 軸過濾 (> 15%): {len(filtered_points)} 點")
+
+    if len(filtered_points) == 0:
+        raise ValueError("Z 軸過濾後沒有點！")
+
+    # 計算點到 Falx 平面的 signed distance
+    # d = (Ax + By + Cz + D) / sqrt(A² + B² + C²)
+    signed_distances = (A * filtered_points[:, 0] + 
+                       B * filtered_points[:, 1] + 
+                       C * filtered_points[:, 2] + D) / norm
+
+    # 分左右側（正距離 = 右側，負距離 = 左側）
+    left_side_mask = signed_distances < 0
+    right_side_mask = signed_distances > 0
+
+    left_side_points = filtered_points[left_side_mask]
+    right_side_points = filtered_points[right_side_mask]
+    
+    # Fallback 1: 如果用 signed distance 分不出左右，改用 Falx 中心 X 座標
+    if len(left_side_points) == 0 or len(right_side_points) == 0:
+        if verbose:
+            print(f"  ⚠️ Signed distance 分側失敗，改用 Falx 中心 X 座標分側")
+        falx_center_x = falx_plane['center'][0]
+        left_side_mask = filtered_points[:, 0] < falx_center_x
+        right_side_mask = filtered_points[:, 0] >= falx_center_x
+        left_side_points = filtered_points[left_side_mask]
+        right_side_points = filtered_points[right_side_mask]
+    
+    # Fallback 2: 如果 Falx 中心分側仍失敗，用 X 座標中位數分側（一定能成功）
+    if len(left_side_points) == 0 or len(right_side_points) == 0:
+        if verbose:
+            print(f"  ⚠️ Falx 中心分側失敗，改用 X 座標中位數分側")
+        x_median = np.median(filtered_points[:, 0])
+        left_side_mask = filtered_points[:, 0] < x_median
+        right_side_mask = filtered_points[:, 0] >= x_median
+        left_side_points = filtered_points[left_side_mask]
+        right_side_points = filtered_points[right_side_mask]
+    
+    if len(left_side_points) == 0 or len(right_side_points) == 0:
+        raise ValueError("左側或右側沒有點！（所有點 X 座標相同）")
+    
+    # 重新計算距離（用 X 座標與中心的距離）
+    center_x = falx_plane['center'][0]
+    left_side_distances = np.abs(filtered_points[left_side_mask][:, 0] - center_x)
+    right_side_distances = np.abs(filtered_points[right_side_mask][:, 0] - center_x)
+
+    # 找各側最大距離的點
+    left_max_idx = np.argmax(left_side_distances)
+    right_max_idx = np.argmax(right_side_distances)
+
+    left_max_distance = left_side_distances[left_max_idx]
+    right_max_distance = right_side_distances[right_max_idx]
+
+    left_extreme_point = left_side_points[left_max_idx]
+    right_extreme_point = right_side_points[right_max_idx]
+
+    # 總距離 = 左側最大距離 + 右側最大距離
+    total_distance = left_max_distance + right_max_distance
+
+    if verbose:
+        print(f"  左側最大距離: {left_max_distance:.2f} mm")
+        print(f"  右側最大距離: {right_max_distance:.2f} mm")
+        print(f"  前腳總寬度: {total_distance:.2f} mm")
+
+    return (total_distance, 
+            tuple(left_extreme_point), 
+            tuple(right_extreme_point),
+            len(left_side_points),
+            len(right_side_points))
+
+
 def calculate_centroid_3d(image, return_physical=True):
     """
     計算3D影像的質心（重心）座標
@@ -141,31 +371,94 @@ def calculate_centroid_distance(left_ventricle, right_ventricle):
     return distance_mm, left_centroid_physical, right_centroid_physical, voxel_size
 
 
-def calculate_cranial_width(original_img, verbose=True):
+def calculate_cranial_width(original_img, falx_plane=None, verbose=True):
     """
-    計算顱內橫向最大寬度（在每個切面上計算，取最大值）
+    計算顱內橫向最大寬度
+
+    如果提供 falx_plane，則使用 Falx 平面作為中線參考，計算左右兩側到平面的最大距離之和。
+    否則使用傳統方法（在每個切面上計算 X 軸寬度，取最大值）。
 
     Args:
         original_img: 原始腦部影像物件
+        falx_plane: Falx 平面參數（可選）
+        verbose: 是否顯示計算資訊
 
     Returns:
-        tuple: (最大寬度(mm), 左端點座標(mm), 右端點座標(mm), 切面編號)
+        tuple: (最大寬度(mm), 左端點座標(mm), 右端點座標(mm), 切面編號或None)
     """
     # 取得資料
     data = get_image_data(original_img)
     voxel_size = get_voxel_size(original_img)
-
-    max_width = 0
-    max_slice_idx = 0
-    left_point_voxel = None
-    right_point_voxel = None
 
     # 輸出計算資訊（如果 verbose=True）
     if verbose:
         from processors.printers import print_cranial_width_calculation_info
         print_cranial_width_calculation_info(verbose)
 
-    # 遍歷每個 Z 切面
+    # 如果有 Falx 平面，使用 Falx-based 方法
+    if falx_plane is not None:
+        if verbose:
+            print("  使用 Falx 平面計算顱內寬度")
+        
+        # 取得 Falx 平面參數
+        A, B, C, D = falx_plane['A'], falx_plane['B'], falx_plane['C'], falx_plane['D']
+        norm = np.sqrt(A**2 + B**2 + C**2)
+        
+        # 取得所有腦部非零點
+        brain_coords_voxel = np.argwhere(data > 0)
+        
+        if len(brain_coords_voxel) == 0:
+            raise ValueError("無法在影像中找到非零體素！")
+        
+        # 轉換為物理座標
+        homogeneous = np.column_stack([brain_coords_voxel, np.ones(len(brain_coords_voxel))])
+        brain_points = (original_img.affine @ homogeneous.T).T[:, :3]
+        
+        # 計算每個點到 Falx 平面的 signed distance
+        signed_distances = (A * brain_points[:, 0] + 
+                           B * brain_points[:, 1] + 
+                           C * brain_points[:, 2] + D) / norm
+        
+        # 分左右側
+        left_mask = signed_distances < 0
+        right_mask = signed_distances > 0
+        
+        if not np.any(left_mask) or not np.any(right_mask):
+            # Fallback 到傳統方法
+            if verbose:
+                print("  ⚠️ Falx 分側失敗，退回傳統方法")
+            return calculate_cranial_width(original_img, falx_plane=None, verbose=False)
+        
+        left_distances = np.abs(signed_distances[left_mask])
+        right_distances = signed_distances[right_mask]
+        
+        # 找左右側最大距離的點
+        left_max_idx = np.argmax(left_distances)
+        right_max_idx = np.argmax(right_distances)
+        
+        left_max_distance = left_distances[left_max_idx]
+        right_max_distance = right_distances[right_max_idx]
+        
+        # 取得對應的點座標
+        left_point_physical = brain_points[left_mask][left_max_idx]
+        right_point_physical = brain_points[right_mask][right_max_idx]
+        
+        # 總寬度 = 左側最大距離 + 右側最大距離
+        max_width = left_max_distance + right_max_distance
+        
+        if verbose:
+            print(f"  左側最大距離: {left_max_distance:.2f} mm")
+            print(f"  右側最大距離: {right_max_distance:.2f} mm")
+            print(f"  顱內總寬度: {max_width:.2f} mm")
+        
+        return max_width, tuple(left_point_physical), tuple(right_point_physical), None
+
+    # 傳統方法：遍歷每個 Z 切面
+    max_width = 0
+    max_slice_idx = 0
+    left_point_voxel = None
+    right_point_voxel = None
+
     for z in range(data.shape[2]):
         slice_data = data[:, :, z]
 
@@ -336,14 +629,17 @@ def calculate_anterior_horn_max_distance(left_ventricle, right_ventricle, verbos
     return distance, tuple(left_extreme_point), tuple(right_extreme_point), len(left_anterior), len(right_anterior)
 
 
-def calculate_3d_evan_index(left_ventricle, right_ventricle, original_img, verbose=True):
+def calculate_3d_evan_index(left_ventricle, right_ventricle, original_img, falx_img=None, verbose=True):
     """
-    計算 3D Evan Index（腦室前腳最大距離與顱內寬度的比值）
+    計算 3D Evan Index（腦室前腳距離與顱內寬度的比值）
+
+    預設使用 Falx-based 方法（如果提供 falx_img）。
 
     Args:
         left_ventricle: 左腦室影像物件
         right_ventricle: 右腦室影像物件
         original_img: 原始腦部影像物件
+        falx_img: Falx（大腦鐮）mask 影像物件，用於中線定位
         verbose: 是否顯示計算過程資訊
 
     Returns:
@@ -366,16 +662,37 @@ def calculate_3d_evan_index(left_ventricle, right_ventricle, original_img, verbo
                     'left': int,
                     'right': int
                 },
-                'voxel_size': tuple
+                'voxel_size': tuple,
+                'method': str  # 'falx' or 'centroid'
             }
     """
-    # 計算前腳最大距離
-    anterior_distance, left_endpoint, right_endpoint, left_count, right_count = \
-        calculate_anterior_horn_max_distance(left_ventricle, right_ventricle, verbose=verbose)
+    # 根據是否有 Falx 選擇計算方法
+    if falx_img is not None:
+        # 使用 Falx-based 方法
+        if verbose:
+            print("  使用 Falx-based 方法計算前腳距離")
+        
+        # 擬合 Falx 平面
+        falx_plane = fit_falx_plane(falx_img, verbose=verbose)
+        
+        # 計算前腳距離
+        anterior_distance, left_endpoint, right_endpoint, left_count, right_count = \
+            calculate_anterior_horn_distance_with_falx(
+                left_ventricle, right_ventricle, falx_plane, verbose=verbose
+            )
+        method = 'falx'
+    else:
+        # 使用傳統質心方法
+        if verbose:
+            print("  使用傳統質心方法計算前腳距離")
+        anterior_distance, left_endpoint, right_endpoint, left_count, right_count = \
+            calculate_anterior_horn_max_distance(left_ventricle, right_ventricle, verbose=verbose)
+        method = 'centroid'
+        falx_plane = None  # 沒有 Falx 平面
 
-    # 計算顱內寬度
+    # 計算顱內寬度（如果有 Falx 平面則使用之）
     cranial_width, cranial_left, cranial_right, cranial_slice = \
-        calculate_cranial_width(original_img)
+        calculate_cranial_width(original_img, falx_plane=falx_plane, verbose=verbose)
 
     # 計算 Evan Index
     evan_index = anterior_distance / cranial_width
@@ -389,7 +706,8 @@ def calculate_3d_evan_index(left_ventricle, right_ventricle, original_img, verbo
         from processors.printers import print_evan_index_results
         print_evan_index_results(anterior_distance, cranial_width, evan_index, evan_index_percent, verbose)
 
-    return {
+    # 建立返回結果
+    result = {
         'anterior_horn_distance_mm': anterior_distance,
         'cranial_width_mm': cranial_width,
         'evan_index': evan_index,
@@ -407,5 +725,12 @@ def calculate_3d_evan_index(left_ventricle, right_ventricle, original_img, verbo
             'left': left_count,
             'right': right_count
         },
-        'voxel_size': voxel_size
+        'voxel_size': voxel_size,
+        'method': method
     }
+    
+    # 如果使用 Falx 方法，加入平面資訊
+    if method == 'falx':
+        result['falx_plane'] = falx_plane
+    
+    return result

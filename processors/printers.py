@@ -330,6 +330,13 @@ def print_evan_index_summary(evan_data):
     right_count = evan_data['anterior_horn_points_count']['right']
 
     voxel_size = evan_data['voxel_size']
+    
+    # 顯示計算方法
+    method = evan_data.get('method', 'centroid')
+    if method == 'falx':
+        print(f"\n計算方法: Falx-based (使用大腦鐮作為中線參考)")
+    else:
+        print(f"\n計算方法: 傳統質心方法")
 
     print(f"\n前腳最大距離端點：")
     print(f"  左側端點 (mm): ({left_endpoint[0]:.2f}, {left_endpoint[1]:.2f}, {left_endpoint[2]:.2f})")

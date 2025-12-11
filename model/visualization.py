@@ -266,7 +266,7 @@ def visualize_ventricle_distance(left_ventricle, right_ventricle,
 
 def visualize_3d_evan_index(left_ventricle, right_ventricle, original_img,
                               evan_data, output_path="evan_index.png",
-                              show_plot=True):
+                              show_plot=True, falx_img=None, falx_plane=None):
     """
     視覺化 3D Evan Index（腦室前腳最大距離與顱內寬度）
 
@@ -277,6 +277,8 @@ def visualize_3d_evan_index(left_ventricle, right_ventricle, original_img,
         evan_data: 3D Evan Index 計算結果字典
         output_path: 輸出圖片路徑
         show_plot: 是否顯示互動式圖表
+        falx_img: Falx（大腦鐮）mask 影像物件（可選）
+        falx_plane: Falx 平面參數字典（可選，包含 falx_points 等）
 
     Returns:
         plotly figure物件
@@ -394,6 +396,64 @@ def visualize_3d_evan_index(left_ventricle, right_ventricle, original_img,
         ))
     except Exception as e:
         print(f"警告: 無法計算質心 - {str(e)}")
+
+    # 顯示 Falx 平面（如果有提供）
+    if falx_plane is not None:
+        try:
+            # 取得 Falx 平面參數
+            center = falx_plane['center']
+            normal = falx_plane['normal']
+            y_min, y_max = falx_plane['y_range']
+            
+            # 繪製 Falx 平面中心線
+            line_start = center - 60 * np.array([0, 0, 1])
+            line_end = center + 60 * np.array([0, 0, 1])
+            
+            fig.add_trace(go.Scatter3d(
+                x=[line_start[0], line_end[0]],
+                y=[line_start[1], line_end[1]],
+                z=[line_start[2], line_end[2]],
+                mode='lines',
+                line=dict(color='green', width=8),
+                name='Falx Midline',
+                showlegend=True
+            ))
+            
+            # 繪製 Falx 平面中心點
+            fig.add_trace(go.Scatter3d(
+                x=[center[0]],
+                y=[center[1]],
+                z=[center[2]],
+                mode='markers',
+                marker=dict(size=8, color='green', symbol='cross'),
+                name='Falx Center',
+                showlegend=True
+            ))
+            
+            # 使用 Mesh3d 顯示平滑的 Falx 表面（如果有 Marching Cubes 數據）
+            if 'surface_vertices' in falx_plane and 'surface_faces' in falx_plane:
+                falx_verts = falx_plane['surface_vertices']
+                falx_faces = falx_plane['surface_faces']
+                
+                fig.add_trace(go.Mesh3d(
+                    x=falx_verts[:, 0],
+                    y=falx_verts[:, 1],
+                    z=falx_verts[:, 2],
+                    i=falx_faces[:, 0],
+                    j=falx_faces[:, 1],
+                    k=falx_faces[:, 2],
+                    color='lightgreen',
+                    opacity=0.3,
+                    name='Falx Surface',
+                    showlegend=True,
+                    lighting=dict(ambient=0.6, diffuse=0.8, specular=0.2),
+                    flatshading=False
+                ))
+                print(f"✓ Falx 平滑表面已加入 ({len(falx_verts)} 頂點)")
+            
+            print(f"✓ Falx 平面已加入")
+        except Exception as e:
+            print(f"警告: 無法顯示 Falx 平面 - {str(e)}")
 
 
     # 前腳最大距離的端點標記
