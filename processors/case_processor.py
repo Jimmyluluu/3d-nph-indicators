@@ -25,9 +25,66 @@ from processors.printers import (
     print_measurement_summary,
     print_evan_index_summary,
     print_surface_area_summary,
-    print_volume_surface_ratio_summary
 )
 
+
+def find_case_files(data_dir, require_original=True):
+    """
+    尋找案例資料夾中的腦室和原始影像檔案路徑
+    
+    支援兩種命名模式：
+    - 標準命名: Ventricle_L.nii.gz, Ventricle_R.nii.gz, original.nii.gz
+    - data_ 命名: mask_Ventricle_L_{num}.nii.gz, mask_Ventricle_R_{num}.nii.gz, original_{num}.nii.gz
+    
+    Args:
+        data_dir: 資料目錄路徑
+        require_original: 是否需要原始影像檔案
+        
+    Returns:
+        dict: 包含檔案路徑的字典
+            - 'left_path': 左腦室檔案路徑
+            - 'right_path': 右腦室檔案路徑
+            - 'original_path': 原始影像檔案路徑 (如果 require_original=True)
+            
+    Raises:
+        FileNotFoundError: 如果找不到必要的檔案
+    """
+    data_path = Path(data_dir)
+    case_name = data_path.name
+    
+    # 預設使用標準命名
+    left_path = data_path / "Ventricle_L.nii.gz"
+    right_path = data_path / "Ventricle_R.nii.gz"
+    original_path = data_path / "original.nii.gz"
+    
+    # 檢查是否為 data_ 開頭的命名模式
+    if case_name.startswith('data_'):
+        data_num = case_name.replace('data_', '')
+        left_path_alt = data_path / f"mask_Ventricle_L_{data_num}.nii.gz"
+        right_path_alt = data_path / f"mask_Ventricle_R_{data_num}.nii.gz"
+        original_path_alt = data_path / f"original_{data_num}.nii.gz"
+        
+        if left_path_alt.exists():
+            left_path = left_path_alt
+            right_path = right_path_alt
+            original_path = original_path_alt
+    
+    # 驗證檔案存在
+    if not left_path.exists() or not right_path.exists():
+        raise FileNotFoundError(f"在 {data_dir} 中找不到腦室檔案")
+    
+    if require_original and not original_path.exists():
+        raise FileNotFoundError(f"在 {data_dir} 中找不到原始影像檔案")
+    
+    result = {
+        'left_path': left_path,
+        'right_path': right_path,
+    }
+    
+    if require_original:
+        result['original_path'] = original_path
+    
+    return result
 
 
 def process_case_indicator_ratio(data_dir, output_image_path, show_plot=False, verbose=True):
@@ -44,24 +101,11 @@ def process_case_indicator_ratio(data_dir, output_image_path, show_plot=False, v
         dict: 包含所有測量結果的字典
     """
     try:
-        data_path = Path(data_dir)
-        case_name = data_path.name
-
-        # 找檔案（支援兩種命名模式）
-        left_path = data_path / "Ventricle_L.nii.gz"
-        right_path = data_path / "Ventricle_R.nii.gz"
-        original_path = data_path / "original.nii.gz"
-
-        if case_name.startswith('data_'):
-            data_num = case_name.replace('data_', '')
-            left_path_alt = data_path / f"mask_Ventricle_L_{data_num}.nii.gz"
-            right_path_alt = data_path / f"mask_Ventricle_R_{data_num}.nii.gz"
-            original_path_alt = data_path / f"original_{data_num}.nii.gz"
-
-            if left_path_alt.exists():
-                left_path = left_path_alt
-                right_path = right_path_alt
-                original_path = original_path_alt
+        # 使用統一的檔案路徑查找函數
+        files = find_case_files(data_dir, require_original=True)
+        left_path = files['left_path']
+        right_path = files['right_path']
+        original_path = files['original_path']
 
         # 載入腦室影像（自動拉正到 RAS+ 方向）
         left_vent, right_vent = load_ventricle_pair(
@@ -125,76 +169,6 @@ def process_case_indicator_ratio(data_dir, output_image_path, show_plot=False, v
         }
 
 
-def process_case_volume_surface_ratio(data_dir, output_image_path, show_plot=False, verbose=True):
-    """
-    處理單一案例 - 體積與表面積比例
-
-    Args:
-        data_dir (str): 資料目錄路徑
-        output_image_path (str): 輸出圖片路徑
-        show_plot (bool): 是否顯示互動式圖表
-        verbose (bool): 是否顯示詳細資訊
-
-    Returns:
-        dict: 包含所有測量結果的字典
-    """
-    try:
-        data_path = Path(data_dir)
-        case_name = data_path.name
-
-        # 找檔案
-        left_path = data_path / "Ventricle_L.nii.gz"
-        right_path = data_path / "Ventricle_R.nii.gz"
-
-        if not left_path.exists() or not right_path.exists():
-            raise FileNotFoundError(f"在 {data_dir} 中找不到腦室檔案 Ventricle_L.nii.gz 或 Ventricle_R.nii.gz")
-
-        # 載入腦室影像（自動拉正到 RAS+ 方向）
-        left_vent, right_vent = load_ventricle_pair(
-            str(left_path), str(right_path), verbose=verbose
-        )
-
-        # 計算體積與表面積比例
-        ratio_data = calculate_volume_surface_ratio(
-            left_vent, right_vent, verbose=verbose
-        )
-
-        # 輸出摘要
-        if verbose:
-            print_volume_surface_ratio_summary(ratio_data)
-
-        # 視覺化（傳影像物件，不傳路徑）
-        visualize_volume_surface_ratio(
-            left_vent, right_vent,  # 傳物件，不傳路徑
-            ratio_data,
-            output_path=str(output_image_path),
-            show_plot=show_plot
-        )
-
-        # 返回成功結果
-        return {
-            'status': 'success',
-            'left_volume': ratio_data['left_volume'],
-            'right_volume': ratio_data['right_volume'],
-            'total_volume': ratio_data['total_volume'],
-            'left_surface_area': ratio_data['left_surface_area'],
-            'right_surface_area': ratio_data['right_surface_area'],
-            'total_surface_area': ratio_data['total_surface_area'],
-            'left_ratio': ratio_data['left_ratio'],
-            'right_ratio': ratio_data['right_ratio'],
-            'total_ratio': ratio_data['total_ratio'],
-            'ratio_difference': ratio_data['ratio_difference'],
-            'ratio_difference_percent': ratio_data['ratio_difference_percent']
-        }
-
-    except Exception as e:
-        return {
-            'status': 'error',
-            'error_message': str(e),
-            'error_type': type(e).__name__
-        }
-
-
 def process_case_evan_index(data_dir, output_image_path, show_plot=False, verbose=True):
     """
     處理單一案例 - 3D Evan Index
@@ -209,24 +183,11 @@ def process_case_evan_index(data_dir, output_image_path, show_plot=False, verbos
         dict: 包含所有測量結果的字典
     """
     try:
-        data_path = Path(data_dir)
-        case_name = data_path.name
-
-        # 找檔案（支援兩種命名模式）
-        left_path = data_path / "Ventricle_L.nii.gz"
-        right_path = data_path / "Ventricle_R.nii.gz"
-        original_path = data_path / "original.nii.gz"
-
-        if case_name.startswith('data_'):
-            data_num = case_name.replace('data_', '')
-            left_path_alt = data_path / f"mask_Ventricle_L_{data_num}.nii.gz"
-            right_path_alt = data_path / f"mask_Ventricle_R_{data_num}.nii.gz"
-            original_path_alt = data_path / f"original_{data_num}.nii.gz"
-
-            if left_path_alt.exists():
-                left_path = left_path_alt
-                right_path = right_path_alt
-                original_path = original_path_alt
+        # 使用統一的檔案路徑查找函數
+        files = find_case_files(data_dir, require_original=True)
+        left_path = files['left_path']
+        right_path = files['right_path']
+        original_path = files['original_path']
 
         # 載入腦室影像（自動拉正到 RAS+ 方向）
         left_vent, right_vent = load_ventricle_pair(
@@ -276,76 +237,6 @@ def process_case_evan_index(data_dir, output_image_path, show_plot=False, verbos
         }
 
 
-def process_case_volume_surface_ratio(data_dir, output_image_path, show_plot=False, verbose=True):
-    """
-    處理單一案例 - 體積與表面積比例
-
-    Args:
-        data_dir (str): 資料目錄路徑
-        output_image_path (str): 輸出圖片路徑
-        show_plot (bool): 是否顯示互動式圖表
-        verbose (bool): 是否顯示詳細資訊
-
-    Returns:
-        dict: 包含所有測量結果的字典
-    """
-    try:
-        data_path = Path(data_dir)
-        case_name = data_path.name
-
-        # 找檔案
-        left_path = data_path / "Ventricle_L.nii.gz"
-        right_path = data_path / "Ventricle_R.nii.gz"
-
-        if not left_path.exists() or not right_path.exists():
-            raise FileNotFoundError(f"在 {data_dir} 中找不到腦室檔案 Ventricle_L.nii.gz 或 Ventricle_R.nii.gz")
-
-        # 載入腦室影像（自動拉正到 RAS+ 方向）
-        left_vent, right_vent = load_ventricle_pair(
-            str(left_path), str(right_path), verbose=verbose
-        )
-
-        # 計算體積與表面積比例
-        ratio_data = calculate_volume_surface_ratio(
-            left_vent, right_vent, verbose=verbose
-        )
-
-        # 輸出摘要
-        if verbose:
-            print_volume_surface_ratio_summary(ratio_data)
-
-        # 視覺化（傳影像物件，不傳路徑）
-        visualize_volume_surface_ratio(
-            left_vent, right_vent,  # 傳物件，不傳路徑
-            ratio_data,
-            output_path=str(output_image_path),
-            show_plot=show_plot
-        )
-
-        # 返回成功結果
-        return {
-            'status': 'success',
-            'left_volume': ratio_data['left_volume'],
-            'right_volume': ratio_data['right_volume'],
-            'total_volume': ratio_data['total_volume'],
-            'left_surface_area': ratio_data['left_surface_area'],
-            'right_surface_area': ratio_data['right_surface_area'],
-            'total_surface_area': ratio_data['total_surface_area'],
-            'left_ratio': ratio_data['left_ratio'],
-            'right_ratio': ratio_data['right_ratio'],
-            'total_ratio': ratio_data['total_ratio'],
-            'ratio_difference': ratio_data['ratio_difference'],
-            'ratio_difference_percent': ratio_data['ratio_difference_percent']
-        }
-
-    except Exception as e:
-        return {
-            'status': 'error',
-            'error_message': str(e),
-            'error_type': type(e).__name__
-        }
-
-
 def process_case_surface_area(data_dir, output_image_path, show_plot=False, verbose=True):
     """
     處理單一案例 - 腦室表面積
@@ -360,15 +251,10 @@ def process_case_surface_area(data_dir, output_image_path, show_plot=False, verb
         dict: 包含所有測量結果的字典
     """
     try:
-        data_path = Path(data_dir)
-        case_name = data_path.name
-
-        # 找檔案
-        left_path = data_path / "Ventricle_L.nii.gz"
-        right_path = data_path / "Ventricle_R.nii.gz"
-        
-        if not left_path.exists() or not right_path.exists():
-            raise FileNotFoundError(f"在 {data_dir} 中找不到腦室檔案 Ventricle_L.nii.gz 或 Ventricle_R.nii.gz")
+        # 使用統一的檔案路徑查找函數（不需要原始影像）
+        files = find_case_files(data_dir, require_original=False)
+        left_path = files['left_path']
+        right_path = files['right_path']
 
         # 載入腦室影像
         left_vent, right_vent = load_ventricle_pair(
@@ -415,39 +301,30 @@ def process_case_volume_surface_ratio(data_dir, output_image_path, show_plot=Fal
         dict: 包含所有測量結果的字典
     """
     try:
-        data_path = Path(data_dir)
-        case_name = data_path.name
-
-        # 找檔案
-        left_path = data_path / "Ventricle_L.nii.gz"
-        right_path = data_path / "Ventricle_R.nii.gz"
-
-        if not left_path.exists() or not right_path.exists():
-            raise FileNotFoundError(f"在 {data_dir} 中找不到腦室檔案 Ventricle_L.nii.gz 或 Ventricle_R.nii.gz")
+        # 使用統一的檔案路徑查找函數（不需要原始影像）
+        files = find_case_files(data_dir, require_original=False)
+        left_path = files['left_path']
+        right_path = files['right_path']
 
         # 載入腦室影像（自動拉正到 RAS+ 方向）
         left_vent, right_vent = load_ventricle_pair(
             str(left_path), str(right_path), verbose=verbose
         )
 
-        # 計算體積與表面積比例
+        # 計算體積與表面積比例（已更新為只計算總體比例）
         ratio_data = calculate_volume_surface_ratio(
             left_vent, right_vent, verbose=verbose
         )
 
-        # 輸出摘要
-        if verbose:
-            print_volume_surface_ratio_summary(ratio_data)
-
         # 視覺化（傳影像物件，不傳路徑）
         visualize_volume_surface_ratio(
-            left_vent, right_vent,  # 傳物件，不傳路徑
+            left_vent, right_vent,
             ratio_data,
             output_path=str(output_image_path),
             show_plot=show_plot
         )
 
-        # 返回成功結果
+        # 返回成功結果（已簡化，只保留總體比例）
         return {
             'status': 'success',
             'left_volume': ratio_data['left_volume'],
@@ -456,11 +333,7 @@ def process_case_volume_surface_ratio(data_dir, output_image_path, show_plot=Fal
             'left_surface_area': ratio_data['left_surface_area'],
             'right_surface_area': ratio_data['right_surface_area'],
             'total_surface_area': ratio_data['total_surface_area'],
-            'left_ratio': ratio_data['left_ratio'],
-            'right_ratio': ratio_data['right_ratio'],
-            'total_ratio': ratio_data['total_ratio'],
-            'ratio_difference': ratio_data['ratio_difference'],
-            'ratio_difference_percent': ratio_data['ratio_difference_percent']
+            'total_ratio': ratio_data['total_ratio']
         }
 
     except Exception as e:
@@ -469,4 +342,3 @@ def process_case_volume_surface_ratio(data_dir, output_image_path, show_plot=Fal
             'error_message': str(e),
             'error_type': type(e).__name__
         }
-

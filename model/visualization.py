@@ -610,7 +610,7 @@ def visualize_volume_surface_ratio(left_ventricle, right_ventricle, ratio_data,
             k=left_faces[:, 2],
             color='blue',
             opacity=0.4,
-            name=f'Left Ventricle<br>V: {ratio_data["left_volume"]:.1f}mm³<br>S: {ratio_data["left_surface_area"]:.1f}mm²<br>Ratio: {ratio_data["left_ratio"]:.3f}mm',
+            name=f'Left Ventricle<br>V: {ratio_data["left_volume"]:.1f}mm³<br>S: {ratio_data["left_surface_area"]:.1f}mm²',
             lighting=dict(
                 ambient=0.6,
                 diffuse=0.8,
@@ -637,7 +637,7 @@ def visualize_volume_surface_ratio(left_ventricle, right_ventricle, ratio_data,
             k=right_faces[:, 2],
             color='red',
             opacity=0.4,
-            name=f'Right Ventricle<br>V: {ratio_data["right_volume"]:.1f}mm³<br>S: {ratio_data["right_surface_area"]:.1f}mm²<br>Ratio: {ratio_data["right_ratio"]:.3f}mm',
+            name=f'Right Ventricle<br>V: {ratio_data["right_volume"]:.1f}mm³<br>S: {ratio_data["right_surface_area"]:.1f}mm²',
             lighting=dict(
                 ambient=0.6,
                 diffuse=0.8,
@@ -654,7 +654,7 @@ def visualize_volume_surface_ratio(left_ventricle, right_ventricle, ratio_data,
         title=dict(
             text=f'腦室體積與表面積比例分析<br>' +
                  f'總體積: {ratio_data["total_volume"]:.1f} mm³, 總表面積: {ratio_data["total_surface_area"]:.1f} mm²<br>' +
-                 f'整體比例: {ratio_data["total_ratio"]:.3f} mm, 差異: {ratio_data["ratio_difference"]:.3f} mm ({ratio_data["ratio_difference_percent"]:.1f}%)',
+                 f'V/SA 比例: {ratio_data["total_ratio"]:.3f} mm',
             x=0.5,
             font=dict(size=14)
         ),
@@ -685,3 +685,4 @@ def visualize_volume_surface_ratio(left_ventricle, right_ventricle, ratio_data,
         print(f"✓ 3D 互動圖表已儲存: {output_path.replace('.png', '.html')}")
 
     return fig
+

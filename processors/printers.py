@@ -182,7 +182,7 @@ def print_volume_surface_calculation_start(name, verbose=True):
         print(f"\n計算 {name} 體積和表面積...")
 
 
-def print_volume_surface_results(name, volume, surface_area, ratio, verbose=True):
+def print_volume_surface_single_result(name, volume, surface_area, verbose=True):
     """
     輸出單個腦室的體積表面積計算結果
 
@@ -190,35 +190,28 @@ def print_volume_surface_results(name, volume, surface_area, ratio, verbose=True
         name: 腦室名稱
         volume: 體積
         surface_area: 表面積
-        ratio: 比例
         verbose: 是否顯示資訊
     """
     if verbose:
         print(f"  {name}:")
         print(f"    體積: {volume:.2f} mm³")
         print(f"    表面積: {surface_area:.2f} mm²")
-        print(f"    比例: {ratio:.4f} mm")
 
 
-def print_volume_surface_ratio_summary(left_volume, left_surface_area, left_ratio,
-                                      right_volume, right_surface_area, right_ratio,
-                                      total_volume, total_surface_area, total_ratio,
-                                      ratio_diff, ratio_diff_percent, verbose=True):
+def print_volume_surface_ratio_summary(left_volume, left_surface_area,
+                                      right_volume, right_surface_area,
+                                      total_volume, total_surface_area, total_ratio, verbose=True):
     """
     輸出體積表面積比例計算總結
 
     Args:
         left_volume: 左腦室體積
         left_surface_area: 左腦室表面積
-        left_ratio: 左腦室比例
         right_volume: 右腦室體積
         right_surface_area: 右腦室表面積
-        right_ratio: 右腦室比例
         total_volume: 總體積
         total_surface_area: 總表面積
-        total_ratio: 整體比例
-        ratio_diff: 比例差異
-        ratio_diff_percent: 差異百分比
+        total_ratio: 整體比例（左右相加後計算）
         verbose: 是否顯示資訊
     """
     if not verbose:
@@ -228,18 +221,13 @@ def print_volume_surface_ratio_summary(left_volume, left_surface_area, left_rati
     print(f"  左腦室:")
     print(f"    體積: {left_volume:.2f} mm³")
     print(f"    表面積: {left_surface_area:.2f} mm²")
-    print(f"    比例: {left_ratio:.4f} mm")
     print(f"  右腦室:")
     print(f"    體積: {right_volume:.2f} mm³")
     print(f"    表面積: {right_surface_area:.2f} mm²")
-    print(f"    比例: {right_ratio:.4f} mm")
-    print(f"  整體:")
+    print(f"  整體 (左+右):")
     print(f"    總體積: {total_volume:.2f} mm³")
     print(f"    總表面積: {total_surface_area:.2f} mm²")
-    print(f"    整體比例: {total_ratio:.4f} mm")
-    print(f"  差異分析:")
-    print(f"    比例差異: {ratio_diff:.4f} mm")
-    print(f"    差異百分比: {ratio_diff_percent:.2f}%")
+    print(f"    V/SA 比例: {total_ratio:.4f} mm")
 
 
 def print_volume_surface_ratio_start(verbose=True):

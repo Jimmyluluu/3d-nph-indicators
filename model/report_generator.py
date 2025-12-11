@@ -89,16 +89,8 @@ INDICATOR_CONFIGS = {
         'right_area_label': '右腦室表面積 (mm²)',
         'total_area_field': 'total_surface_area',
         'total_area_label': '總表面積 (mm²)',
-        'left_ratio_field': 'left_ratio',
-        'left_ratio_label': '左腦室比例 (mm)',
-        'right_ratio_field': 'right_ratio',
-        'right_ratio_label': '右腦室比例 (mm)',
         'total_ratio_field': 'total_ratio',
-        'total_ratio_label': '整體比例 (mm)',
-        'ratio_diff_field': 'ratio_difference',
-        'ratio_diff_label': '比例差異 (mm)',
-        'ratio_diff_percent_field': 'ratio_difference_percent',
-        'ratio_diff_percent_label': '差異百分比 (%)',
+        'total_ratio_label': 'V/SA 比例 (mm)',
         'footer': 'Volume-to-Surface Ratio Calculator'
     }
 }
@@ -147,17 +139,16 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
 
             # 根據指標類型決定表格格式
             if indicator_type == "volume_surface_ratio":
-                # 體積表面積比例專用表格格式
-                f.write(f"| 案例 ID | {config['left_volume_label']} | {config['right_volume_label']} | {config['left_ratio_label']} | {config['right_ratio_label']} | {config['ratio_diff_label']} | 處理時間 |\n")
-                f.write("|---------|-------------------|--------------------|----------------|----------------|----------------|----------|\n")
+                # 體積表面積比例專用表格格式（簡化版，只顯示總體比例）
+                f.write(f"| 案例 ID | {config['left_volume_label']} | {config['right_volume_label']} | {config['total_volume_label']} | {config['total_ratio_label']} | 處理時間 |\n")
+                f.write("|---------|-------------------|--------------------|----------------|----------------|----------|\n")
 
                 for result in successful_results:
                     case_id = result.get('case_id', 'N/A')
                     left_volume = result.get(config['left_volume_field'], 0)
                     right_volume = result.get(config['right_volume_field'], 0)
-                    left_ratio = result.get(config['left_ratio_field'], 0)
-                    right_ratio = result.get(config['right_ratio_field'], 0)
-                    ratio_diff = result.get(config['ratio_diff_field'], 0)
+                    total_volume = result.get(config['total_volume_field'], 0)
+                    total_ratio = result.get(config['total_ratio_field'], 0)
                     time_str = result.get('processing_time', 'N/A')
 
                     if case_id in nph_cases:
@@ -165,7 +156,7 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                     else:
                         case_id_display = case_id
 
-                    f.write(f"| {case_id_display} | {left_volume:.1f} | {right_volume:.1f} | {left_ratio:.4f} | {right_ratio:.4f} | {ratio_diff:.4f} | {time_str} |\n")
+                    f.write(f"| {case_id_display} | {left_volume:.1f} | {right_volume:.1f} | {total_volume:.1f} | {total_ratio:.4f} | {time_str} |\n")
 
             else:
                 # 原有的 distance/ratio 格式 (centroid_ratio, evan_index)
@@ -189,21 +180,19 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
 
             # 統計資訊
             if indicator_type == "volume_surface_ratio":
-                # 體積表面積比例統計
+                # 體積表面積比例統計（簡化版）
                 left_volumes = [r[config['left_volume_field']] for r in successful_results]
                 right_volumes = [r[config['right_volume_field']] for r in successful_results]
-                left_ratios = [r[config['left_ratio_field']] for r in successful_results]
-                right_ratios = [r[config['right_ratio_field']] for r in successful_results]
-                ratio_diffs = [r[config['ratio_diff_field']] for r in successful_results]
+                total_volumes = [r[config['total_volume_field']] for r in successful_results]
+                total_ratios = [r[config['total_ratio_field']] for r in successful_results]
 
                 f.write("\n### 統計數據（全部案例）\n\n")
                 f.write("| 指標 | 最小值 | 最大值 | 平均值 | 中位數 |\n")
                 f.write("|------|--------|--------|--------|--------|\n")
                 f.write(f"| {config['left_volume_label']} | {min(left_volumes):.1f} | {max(left_volumes):.1f} | {sum(left_volumes)/len(left_volumes):.1f} | {sorted(left_volumes)[len(left_volumes)//2]:.1f} |\n")
                 f.write(f"| {config['right_volume_label']} | {min(right_volumes):.1f} | {max(right_volumes):.1f} | {sum(right_volumes)/len(right_volumes):.1f} | {sorted(right_volumes)[len(right_volumes)//2]:.1f} |\n")
-                f.write(f"| {config['left_ratio_label']} | {min(left_ratios):.4f} | {max(left_ratios):.4f} | {sum(left_ratios)/len(left_ratios):.4f} | {sorted(left_ratios)[len(left_ratios)//2]:.4f} |\n")
-                f.write(f"| {config['right_ratio_label']} | {min(right_ratios):.4f} | {max(right_ratios):.4f} | {sum(right_ratios)/len(right_ratios):.4f} | {sorted(right_ratios)[len(right_ratios)//2]:.4f} |\n")
-                f.write(f"| {config['ratio_diff_label']} | {min(ratio_diffs):.4f} | {max(ratio_diffs):.4f} | {sum(ratio_diffs)/len(ratio_diffs):.4f} | {sorted(ratio_diffs)[len(ratio_diffs)//2]:.4f} |\n")
+                f.write(f"| {config['total_volume_label']} | {min(total_volumes):.1f} | {max(total_volumes):.1f} | {sum(total_volumes)/len(total_volumes):.1f} | {sorted(total_volumes)[len(total_volumes)//2]:.1f} |\n")
+                f.write(f"| {config['total_ratio_label']} | {min(total_ratios):.4f} | {max(total_ratios):.4f} | {sum(total_ratios)/len(total_ratios):.4f} | {sorted(total_ratios)[len(total_ratios)//2]:.4f} |\n")
 
             else:
                 # 原有的 distance/ratio 統計
@@ -226,19 +215,13 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                 f.write(f"\n### NPH 案例統計 (n={len(nph_results)})\n\n")
 
                 if indicator_type == "volume_surface_ratio":
-                    nph_left_volumes = [r[config['left_volume_field']] for r in nph_results]
-                    nph_right_volumes = [r[config['right_volume_field']] for r in nph_results]
-                    nph_left_ratios = [r[config['left_ratio_field']] for r in nph_results]
-                    nph_right_ratios = [r[config['right_ratio_field']] for r in nph_results]
-                    nph_ratio_diffs = [r[config['ratio_diff_field']] for r in nph_results]
+                    nph_total_volumes = [r[config['total_volume_field']] for r in nph_results]
+                    nph_total_ratios = [r[config['total_ratio_field']] for r in nph_results]
 
                     f.write("| 指標 | 最小值 | 最大值 | 平均值 | 中位數 |\n")
                     f.write("|------|--------|--------|--------|--------|\n")
-                    f.write(f"| {config['left_volume_label']} | {min(nph_left_volumes):.1f} | {max(nph_left_volumes):.1f} | {sum(nph_left_volumes)/len(nph_left_volumes):.1f} | {sorted(nph_left_volumes)[len(nph_left_volumes)//2]:.1f} |\n")
-                    f.write(f"| {config['right_volume_label']} | {min(nph_right_volumes):.1f} | {max(nph_right_volumes):.1f} | {sum(nph_right_volumes)/len(nph_right_volumes):.1f} | {sorted(nph_right_volumes)[len(nph_right_volumes)//2]:.1f} |\n")
-                    f.write(f"| {config['left_ratio_label']} | {min(nph_left_ratios):.4f} | {max(nph_left_ratios):.4f} | {sum(nph_left_ratios)/len(nph_left_ratios):.4f} | {sorted(nph_left_ratios)[len(nph_left_ratios)//2]:.4f} |\n")
-                    f.write(f"| {config['right_ratio_label']} | {min(nph_right_ratios):.4f} | {max(nph_right_ratios):.4f} | {sum(nph_right_ratios)/len(nph_right_ratios):.4f} | {sorted(nph_right_ratios)[len(nph_right_ratios)//2]:.4f} |\n")
-                    f.write(f"| {config['ratio_diff_label']} | {min(nph_ratio_diffs):.4f} | {max(nph_ratio_diffs):.4f} | {sum(nph_ratio_diffs)/len(nph_ratio_diffs):.4f} | {sorted(nph_ratio_diffs)[len(nph_ratio_diffs)//2]:.4f} |\n")
+                    f.write(f"| {config['total_volume_label']} | {min(nph_total_volumes):.1f} | {max(nph_total_volumes):.1f} | {sum(nph_total_volumes)/len(nph_total_volumes):.1f} | {sorted(nph_total_volumes)[len(nph_total_volumes)//2]:.1f} |\n")
+                    f.write(f"| {config['total_ratio_label']} | {min(nph_total_ratios):.4f} | {max(nph_total_ratios):.4f} | {sum(nph_total_ratios)/len(nph_total_ratios):.4f} | {sorted(nph_total_ratios)[len(nph_total_ratios)//2]:.4f} |\n")
                 else:
                     # 原有的 distance/ratio 統計 (centroid_ratio, evan_index)
                     nph_distances = [r[config['distance_field']] for r in nph_results]
@@ -255,19 +238,13 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                 f.write(f"\n### 非 NPH 案例統計 (n={len(non_nph_results)})\n\n")
 
                 if indicator_type == "volume_surface_ratio":
-                    non_nph_left_volumes = [r[config['left_volume_field']] for r in non_nph_results]
-                    non_nph_right_volumes = [r[config['right_volume_field']] for r in non_nph_results]
-                    non_nph_left_ratios = [r[config['left_ratio_field']] for r in non_nph_results]
-                    non_nph_right_ratios = [r[config['right_ratio_field']] for r in non_nph_results]
-                    non_nph_ratio_diffs = [r[config['ratio_diff_field']] for r in non_nph_results]
+                    non_nph_total_volumes = [r[config['total_volume_field']] for r in non_nph_results]
+                    non_nph_total_ratios = [r[config['total_ratio_field']] for r in non_nph_results]
 
                     f.write("| 指標 | 最小值 | 最大值 | 平均值 | 中位數 |\n")
                     f.write("|------|--------|--------|--------|--------|\n")
-                    f.write(f"| {config['left_volume_label']} | {min(non_nph_left_volumes):.1f} | {max(non_nph_left_volumes):.1f} | {sum(non_nph_left_volumes)/len(non_nph_left_volumes):.1f} | {sorted(non_nph_left_volumes)[len(non_nph_left_volumes)//2]:.1f} |\n")
-                    f.write(f"| {config['right_volume_label']} | {min(non_nph_right_volumes):.1f} | {max(non_nph_right_volumes):.1f} | {sum(non_nph_right_volumes)/len(non_nph_right_volumes):.1f} | {sorted(non_nph_right_volumes)[len(non_nph_right_volumes)//2]:.1f} |\n")
-                    f.write(f"| {config['left_ratio_label']} | {min(non_nph_left_ratios):.4f} | {max(non_nph_left_ratios):.4f} | {sum(non_nph_left_ratios)/len(non_nph_left_ratios):.4f} | {sorted(non_nph_left_ratios)[len(non_nph_left_ratios)//2]:.4f} |\n")
-                    f.write(f"| {config['right_ratio_label']} | {min(non_nph_right_ratios):.4f} | {max(non_nph_right_ratios):.4f} | {sum(non_nph_right_ratios)/len(non_nph_right_ratios):.4f} | {sorted(non_nph_right_ratios)[len(non_nph_right_ratios)//2]:.4f} |\n")
-                    f.write(f"| {config['ratio_diff_label']} | {min(non_nph_ratio_diffs):.4f} | {max(non_nph_ratio_diffs):.4f} | {sum(non_nph_ratio_diffs)/len(non_nph_ratio_diffs):.4f} | {sorted(non_nph_ratio_diffs)[len(non_nph_ratio_diffs)//2]:.4f} |\n")
+                    f.write(f"| {config['total_volume_label']} | {min(non_nph_total_volumes):.1f} | {max(non_nph_total_volumes):.1f} | {sum(non_nph_total_volumes)/len(non_nph_total_volumes):.1f} | {sorted(non_nph_total_volumes)[len(non_nph_total_volumes)//2]:.1f} |\n")
+                    f.write(f"| {config['total_ratio_label']} | {min(non_nph_total_ratios):.4f} | {max(non_nph_total_ratios):.4f} | {sum(non_nph_total_ratios)/len(non_nph_total_ratios):.4f} | {sorted(non_nph_total_ratios)[len(non_nph_total_ratios)//2]:.4f} |\n")
                 else:
                     # 原有的 distance/ratio 統計 (centroid_ratio, evan_index)
                     non_nph_distances = [r[config['distance_field']] for r in non_nph_results]
@@ -287,49 +264,25 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                 f.write("|-----|-----------|-------------|------|-----------|\n")
 
                 if indicator_type == "volume_surface_ratio":
-                    # 體積表面積比例的組間差異計算
-                    nph_left_volumes = [r[config['left_volume_field']] for r in nph_results]
-                    nph_right_volumes = [r[config['right_volume_field']] for r in nph_results]
-                    nph_left_ratios = [r[config['left_ratio_field']] for r in nph_results]
-                    nph_right_ratios = [r[config['right_ratio_field']] for r in nph_results]
-                    nph_ratio_diffs = [r[config['ratio_diff_field']] for r in nph_results]
-                    non_nph_left_volumes = [r[config['left_volume_field']] for r in non_nph_results]
-                    non_nph_right_volumes = [r[config['right_volume_field']] for r in non_nph_results]
-                    non_nph_left_ratios = [r[config['left_ratio_field']] for r in non_nph_results]
-                    non_nph_right_ratios = [r[config['right_ratio_field']] for r in non_nph_results]
-                    non_nph_ratio_diffs = [r[config['ratio_diff_field']] for r in non_nph_results]
+                    # 體積表面積比例的組間差異計算（簡化版）
+                    nph_total_volumes = [r[config['total_volume_field']] for r in nph_results]
+                    nph_total_ratios = [r[config['total_ratio_field']] for r in nph_results]
+                    non_nph_total_volumes = [r[config['total_volume_field']] for r in non_nph_results]
+                    non_nph_total_ratios = [r[config['total_ratio_field']] for r in non_nph_results]
 
-                    # 體積差異
-                    nph_left_vol_mean = sum(nph_left_volumes) / len(nph_left_volumes)
-                    non_nph_left_vol_mean = sum(non_nph_left_volumes) / len(non_nph_left_volumes)
-                    left_vol_diff = nph_left_vol_mean - non_nph_left_vol_mean
-                    left_vol_pct = (left_vol_diff / non_nph_left_vol_mean) * 100
-                    f.write(f"| {config['left_volume_label']} | {nph_left_vol_mean:.1f} | {non_nph_left_vol_mean:.1f} | {left_vol_diff:+.1f} | {left_vol_pct:+.1f}% |\n")
+                    # 總體積差異
+                    nph_vol_mean = sum(nph_total_volumes) / len(nph_total_volumes)
+                    non_nph_vol_mean = sum(non_nph_total_volumes) / len(non_nph_total_volumes)
+                    vol_diff = nph_vol_mean - non_nph_vol_mean
+                    vol_pct = (vol_diff / non_nph_vol_mean) * 100
+                    f.write(f"| {config['total_volume_label']} | {nph_vol_mean:.1f} | {non_nph_vol_mean:.1f} | {vol_diff:+.1f} | {vol_pct:+.1f}% |\n")
 
-                    nph_right_vol_mean = sum(nph_right_volumes) / len(nph_right_volumes)
-                    non_nph_right_vol_mean = sum(non_nph_right_volumes) / len(non_nph_right_volumes)
-                    right_vol_diff = nph_right_vol_mean - non_nph_right_vol_mean
-                    right_vol_pct = (right_vol_diff / non_nph_right_vol_mean) * 100
-                    f.write(f"| {config['right_volume_label']} | {nph_right_vol_mean:.1f} | {non_nph_right_vol_mean:.1f} | {right_vol_diff:+.1f} | {right_vol_pct:+.1f}% |\n")
-
-                    # 比例差異
-                    nph_left_ratio_mean = sum(nph_left_ratios) / len(nph_left_ratios)
-                    non_nph_left_ratio_mean = sum(non_nph_left_ratios) / len(non_nph_left_ratios)
-                    left_ratio_diff = nph_left_ratio_mean - non_nph_left_ratio_mean
-                    left_ratio_pct = (left_ratio_diff / non_nph_left_ratio_mean) * 100
-                    f.write(f"| {config['left_ratio_label']} | {nph_left_ratio_mean:.4f} | {non_nph_left_ratio_mean:.4f} | {left_ratio_diff:+.4f} | {left_ratio_pct:+.1f}% |\n")
-
-                    nph_right_ratio_mean = sum(nph_right_ratios) / len(nph_right_ratios)
-                    non_nph_right_ratio_mean = sum(non_nph_right_ratios) / len(non_nph_right_ratios)
-                    right_ratio_diff = nph_right_ratio_mean - non_nph_right_ratio_mean
-                    right_ratio_pct = (right_ratio_diff / non_nph_right_ratio_mean) * 100
-                    f.write(f"| {config['right_ratio_label']} | {nph_right_ratio_mean:.4f} | {non_nph_right_ratio_mean:.4f} | {right_ratio_diff:+.4f} | {right_ratio_pct:+.1f}% |\n")
-
-                    nph_ratio_diff_mean = sum(nph_ratio_diffs) / len(nph_ratio_diffs)
-                    non_nph_ratio_diff_mean = sum(non_nph_ratio_diffs) / len(non_nph_ratio_diffs)
-                    ratio_diff_diff = nph_ratio_diff_mean - non_nph_ratio_diff_mean
-                    ratio_diff_pct = (ratio_diff_diff / non_nph_ratio_diff_mean) * 100
-                    f.write(f"| **{config['ratio_diff_label']}** | **{nph_ratio_diff_mean:.4f}** | **{non_nph_ratio_diff_mean:.4f}** | **{ratio_diff_diff:+.4f}** | **{ratio_diff_pct:+.1f}%** |\n")
+                    # V/SA 比例差異
+                    nph_ratio_mean = sum(nph_total_ratios) / len(nph_total_ratios)
+                    non_nph_ratio_mean = sum(non_nph_total_ratios) / len(non_nph_total_ratios)
+                    ratio_diff = nph_ratio_mean - non_nph_ratio_mean
+                    ratio_pct = (ratio_diff / non_nph_ratio_mean) * 100
+                    f.write(f"| **{config['total_ratio_label']}** | **{nph_ratio_mean:.4f}** | **{non_nph_ratio_mean:.4f}** | **{ratio_diff:+.4f}** | **{ratio_pct:+.1f}%** |\n")
                 else:
                     # 原有的 distance/ratio 組間差異計算
                     nph_distances = [r[config['distance_field']] for r in nph_results]
@@ -362,17 +315,15 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                 f.write("\n## NPH 案例詳細數據\n\n")
 
                 if indicator_type == "volume_surface_ratio":
-                    f.write(f"| 案例 ID | {config['left_volume_label']} | {config['right_volume_label']} | {config['left_ratio_label']} | {config['right_ratio_label']} | {config['ratio_diff_label']} | 排序 |\n")
-                    f.write("|---------|-------------------|--------------------|----------------|----------------|----------------|------|\n")
+                    f.write(f"| 案例 ID | {config['total_volume_label']} | {config['total_area_label']} | {config['total_ratio_label']} | 排序 |\n")
+                    f.write("|---------|----------------|----------------|----------------|------|\n")
 
-                    nph_sorted = sorted(nph_results, key=lambda x: x[config['left_ratio_field']], reverse=True)
+                    nph_sorted = sorted(nph_results, key=lambda x: x[config['total_ratio_field']], reverse=True)
                     for i, result in enumerate(nph_sorted, 1):
                         case_id = result.get('case_id', 'N/A')
-                        left_volume = result.get(config['left_volume_field'], 0)
-                        right_volume = result.get(config['right_volume_field'], 0)
-                        left_ratio = result.get(config['left_ratio_field'], 0)
-                        right_ratio = result.get(config['right_ratio_field'], 0)
-                        ratio_diff = result.get(config['ratio_diff_field'], 0)
+                        total_volume = result.get(config['total_volume_field'], 0)
+                        total_area = result.get(config['total_area_field'], 0)
+                        total_ratio = result.get(config['total_ratio_field'], 0)
 
                         rank_note = ""
                         if i == 1:
@@ -380,7 +331,7 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                         elif i == len(nph_sorted):
                             rank_note = " (最低)"
 
-                        f.write(f"| {case_id} | {left_volume:.1f} | {right_volume:.1f} | {left_ratio:.4f} | {right_ratio:.4f} | {ratio_diff:.4f} | {i}{rank_note} |\n")
+                        f.write(f"| {case_id} | {total_volume:.1f} | {total_area:.1f} | {total_ratio:.4f} | {i}{rank_note} |\n")
                 else:
                     f.write(f"| 案例 ID | {config['distance_label']} | 顱內寬度 (mm) | {config['ratio_label']} | 百分比 | 排序 |\n")
                     f.write("|---------|---------------|---------------|------|--------|------|\n")

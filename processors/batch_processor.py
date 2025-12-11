@@ -188,10 +188,7 @@ def batch_process(data_dir, indicator_type="centroid_ratio", skip_not_ok=True):
                         logger.info(f"     左腦室表面積: {result['left_surface_area']:.2f} mm²")
                         logger.info(f"     右腦室表面積: {result['right_surface_area']:.2f} mm²")
                         logger.info(f"     總表面積: {result['total_surface_area']:.2f} mm²")
-                        logger.info(f"     左腦室比例: {result['left_ratio']:.4f} mm")
-                        logger.info(f"     右腦室比例: {result['right_ratio']:.4f} mm")
-                        logger.info(f"     整體比例: {result['total_ratio']:.4f} mm")
-                        logger.info(f"     比例差異: {result['ratio_difference']:.4f} mm ({result['ratio_difference_percent']:.2f}%)")
+                        logger.info(f"     V/SA 比例: {result['total_ratio']:.4f} mm")
 
                     logger.info(f"     處理時間: {processing_time:.1f}s")
                 else:

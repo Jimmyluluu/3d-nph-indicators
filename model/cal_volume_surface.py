@@ -26,12 +26,12 @@ def calculate_surface_area(left_ventricle, right_ventricle, verbose=True):
         # 使用統一的表面提取函數 (Marching Cubes 已經提供平滑表面)
         mesh_result = extract_surface_mesh(image_obj, level=0.5, verbose=verbose)
 
-        # 取得體素座標的頂點和面
-        vertices_voxel = mesh_result['vertices_voxel']
+        # 取得物理座標的頂點和面
+        vertices_physical = mesh_result['vertices_physical']
         faces = mesh_result['faces']
 
-        # 使用 Marching Cubes 結果計算表面積
-        surface_area = mesh_surface_area(vertices_voxel, faces)
+        # 使用 Marching Cubes 結果計算表面積 (單位: mm²)
+        surface_area = mesh_surface_area(vertices_physical, faces)
 
         # 輸出表面積結果（使用 processors.printers）
         if verbose:
@@ -100,7 +100,7 @@ def calculate_volume_smooth(image_obj, verbose=True):
 
 def calculate_volume_surface_ratio(left_ventricle, right_ventricle, verbose=True):
     """
-    計算左右腦室的體積與表面積比例（分別計算）
+    計算左右腦室的體積與表面積比例（左右相加後計算總體比例）
 
     Args:
         left_ventricle: 左腦室影像物件
@@ -111,6 +111,7 @@ def calculate_volume_surface_ratio(left_ventricle, right_ventricle, verbose=True
         dict: 包含體積、表面積和比例計算結果的字典
     """
     from skimage.measure import mesh_surface_area
+    from model.image_processing import get_image_data
 
     # 輸出計算開始資訊（使用 processors.printers）
     if verbose:
@@ -119,6 +120,11 @@ def calculate_volume_surface_ratio(left_ventricle, right_ventricle, verbose=True
 
     def _calculate_volume_and_surface(image_obj, name):
         """計算單個腦室的體積和表面積"""
+        # 驗證影像資料
+        image_data = get_image_data(image_obj)
+        if image_data is None or np.sum(image_data > 0) == 0:
+            raise ValueError(f"{name} 影像資料為空或沒有有效的體素")
+
         # 輸出單一腦室計算開始資訊（使用 processors.printers）
         if verbose:
             from processors.printers import print_volume_surface_calculation_start
@@ -129,10 +135,13 @@ def calculate_volume_surface_ratio(left_ventricle, right_ventricle, verbose=True
 
         # 取得網格資料
         vertices_physical = mesh_result['vertices_physical']
-        vertices_voxel = mesh_result['vertices_voxel']
         faces = mesh_result['faces']
 
-        # 計算平滑體積（基於物理座標網格）
+        # 驗證網格資料
+        if len(vertices_physical) == 0 or len(faces) == 0:
+            raise ValueError(f"{name} 無法提取有效的表面網格")
+
+        # 計算平滑體積（基於物理座標網格，單位: mm³）
         volume = 0.0
         for face in faces:
             v1, v2, v3 = vertices_physical[face[0]], vertices_physical[face[1]], vertices_physical[face[2]]
@@ -140,41 +149,32 @@ def calculate_volume_surface_ratio(left_ventricle, right_ventricle, verbose=True
             triangle_volume = np.abs(np.dot(cross_product, v1)) / 6.0
             volume += triangle_volume
 
-        # 計算表面積（基於體素座標網格）
-        surface_area = mesh_surface_area(vertices_voxel, faces)
-
-        # 計算比例
-        ratio = volume / surface_area if surface_area > 0 else 0.0
+        # 計算表面積（基於物理座標網格，單位: mm²）
+        surface_area = mesh_surface_area(vertices_physical, faces)
 
         # 輸出單一腦室計算結果（使用 processors.printers）
         if verbose:
-            from processors.printers import print_volume_surface_results
-            print_volume_surface_results(name, volume, surface_area, ratio, verbose)
+            from processors.printers import print_volume_surface_single_result
+            print_volume_surface_single_result(name, volume, surface_area, verbose)
 
-        return volume, surface_area, ratio
+        return volume, surface_area
 
-    # 分別計算左右腦室
-    left_volume, left_surface_area, left_ratio = _calculate_volume_and_surface(left_ventricle, "左腦室")
-    right_volume, right_surface_area, right_ratio = _calculate_volume_and_surface(right_ventricle, "右腦室")
+    # 分別計算左右腦室的體積和表面積
+    left_volume, left_surface_area = _calculate_volume_and_surface(left_ventricle, "左腦室")
+    right_volume, right_surface_area = _calculate_volume_and_surface(right_ventricle, "右腦室")
 
-    # 計算整體數據
+    # 計算整體數據（左右相加後計算比例）
     total_volume = left_volume + right_volume
     total_surface_area = left_surface_area + right_surface_area
     total_ratio = total_volume / total_surface_area if total_surface_area > 0 else 0.0
-
-    # 計算差異
-    ratio_diff = abs(left_ratio - right_ratio)
-    avg_ratio = (left_ratio + right_ratio) / 2.0
-    ratio_diff_percent = (ratio_diff / avg_ratio * 100.0) if avg_ratio > 0 else 0.0
 
     # 輸出體積表面積比例計算總結（使用 processors.printers）
     if verbose:
         from processors.printers import print_volume_surface_ratio_summary
         print_volume_surface_ratio_summary(
-            left_volume, left_surface_area, left_ratio,
-            right_volume, right_surface_area, right_ratio,
-            total_volume, total_surface_area, total_ratio,
-            ratio_diff, ratio_diff_percent, verbose
+            left_volume, left_surface_area,
+            right_volume, right_surface_area,
+            total_volume, total_surface_area, total_ratio, verbose
         )
 
     return {
@@ -184,9 +184,5 @@ def calculate_volume_surface_ratio(left_ventricle, right_ventricle, verbose=True
         'left_surface_area': left_surface_area,
         'right_surface_area': right_surface_area,
         'total_surface_area': total_surface_area,
-        'left_ratio': left_ratio,
-        'right_ratio': right_ratio,
-        'total_ratio': total_ratio,
-        'ratio_difference': ratio_diff,
-        'ratio_difference_percent': ratio_diff_percent
+        'total_ratio': total_ratio
     }
