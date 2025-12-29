@@ -248,15 +248,10 @@ def visualize_ventricle_distance(left_ventricle, right_ventricle,
         showlegend=True
     )
 
-    # 儲存圖片
-    print(f"\n儲存圖片到: {output_path}")
-    fig.write_image(output_path)
-    print(f"圖片已儲存！")
-
-    # 同時儲存 HTML(可互動)
+    # 只儲存 HTML（互動式 3D，不儲存 PNG 以加速）
     html_path = output_path.replace('.png', '.html')
     fig.write_html(html_path)
-    print(f"互動式HTML已儲存到: {html_path}")
+    print(f"✓ 互動式 3D 已儲存: {html_path}")
 
     # 顯示圖表
     if show_plot:
@@ -534,15 +529,10 @@ def visualize_3d_evan_index(left_ventricle, right_ventricle, original_img,
         showlegend=True
     )
 
-    # 儲存圖片
-    print(f"\n儲存圖片到: {output_path}")
-    fig.write_image(output_path)
-    print(f"圖片已儲存！")
-
-    # 同時儲存 HTML(可互動)
+    # 只儲存 HTML（互動式 3D，不儲存 PNG 以加速）
     html_path = output_path.replace('.png', '.html')
     fig.write_html(html_path)
-    print(f"互動式HTML已儲存到: {html_path}")
+    print(f"✓ 互動式 3D 已儲存: {html_path}")
 
     # 顯示圖表
     if show_plot:
@@ -619,15 +609,10 @@ def visualize_surface_area(surface_data, output_path="surface_area.png", show_pl
         showlegend=True
     )
 
-    # 儲存圖片
-    print(f"\n儲存圖片到: {output_path}")
-    fig.write_image(output_path)
-    print(f"圖片已儲存！")
-
-    # 同時儲存 HTML(可互動)
+    # 只儲存 HTML（互動式 3D，不儲存 PNG 以加速）
     html_path = output_path.replace('.png', '.html')
     fig.write_html(html_path)
-    print(f"互動式HTML已儲存到: {html_path}")
+    print(f"✓ 互動式 3D 已儲存: {html_path}")
 
     # 顯示圖表
     if show_plot:
