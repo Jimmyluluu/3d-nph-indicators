@@ -9,6 +9,9 @@ from pathlib import Path
 from processors.logger import ProcessLogger
 from processors.case_processor import process_case_indicator_ratio, process_case_evan_index, process_case_surface_area, process_case_volume_surface_ratio
 from model.report_generator import generate_markdown_report, INDICATOR_CONFIGS, format_time
+from model.evan_index_analyzer import EvanIndexAnalyzer
+import datetime
+import os
 
 
 def scan_data_directory(base_dir, indicator_type, skip_not_ok=True):
@@ -124,6 +127,10 @@ def batch_process(data_dir=None, indicator_type="centroid_ratio", skip_not_ok=Tr
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
+    # 建立 HTML 檔案專用資料夾
+    html_dir = output_path / "html_files"
+    html_dir.mkdir(exist_ok=True)
+
     log_file = output_path / "processing.log"
 
     # 驗證指標類型並取得配置
@@ -210,16 +217,13 @@ def batch_process(data_dir=None, indicator_type="centroid_ratio", skip_not_ok=Tr
             logger.info(f"\n[{i}/{total_cases}] 處理案例: {case_id}{nph_label}")
 
             try:
-                # 為每個案例建立獨立資料夾
-                case_output_dir = output_path / case_id
-                case_output_dir.mkdir(exist_ok=True)
+                # 直接將 HTML 輸出到 html_files 資料夾
+                output_html_path = html_dir / f"{case_id}.html"
 
-                output_image_path = case_output_dir / f"{case_id}.png"
-
-                # 處理案例
+                # 處理案例（輸出路徑改為 HTML）
                 result = process_func(
                     str(case_dir),
-                    str(output_image_path),
+                    str(output_html_path),
                     show_plot=False,
                     verbose=False
                 )
@@ -305,10 +309,31 @@ def batch_process(data_dir=None, indicator_type="centroid_ratio", skip_not_ok=Tr
                                  indicator_type, use_is_nph_field=use_dual_mode)
         logger.success(f"Markdown 報表已儲存: {md_path}")
 
+        # 如果是 Evan Index，自動執行進階分析與 ROC 曲線
+        if indicator_type == "evan_index":
+            try:
+                logger.info("\n執行 Evan Index 進階分析...")
+                analyzer = EvanIndexAnalyzer(str(md_path))
+                
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+                
+                # 自動生成分析報告
+                analysis_filename = f'evan_index_analysis_{timestamp}.md'
+                analysis_path = output_path / analysis_filename
+                analyzer.generate_report(str(analysis_path))
+                logger.success(f"進階分析報告已生成: {analysis_path}")
+                
+                # 自動生成 ROC 曲線
+                roc_filename = f'roc_curve_{timestamp}.png'
+                roc_path = output_path / roc_filename
+                analyzer.generate_roc_curve(str(roc_path))
+                logger.success(f"ROC 曲線已生成: {roc_path}")
+                
+            except Exception as e:
+                logger.error(f"進階分析執行失敗: {str(e)}", e)
+
         logger.info("\n結果檔案位置:")
-        logger.info(f"  案例資料夾: {output_path}/<case_id>/")
-        logger.info(f"    - <case_id>.png (圖片)")
-        logger.info(f"    - <case_id>.html (互動式圖表)")
+        logger.info(f"  HTML 檔案: {html_dir}/<case_id>.html (互動式圖表)")
         logger.info(f"  報表: {md_path}")
         logger.info(f"  日誌: {log_file}")
         logger.info("=" * 70)
