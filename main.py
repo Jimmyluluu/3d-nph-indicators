@@ -28,16 +28,16 @@ def main():
   volume_surface_ratio - 體積與表面積比例（mm，球形度指標）
 
 使用範例:
-  # 批次處理
-  python main.py batch --type centroid_ratio
-  python main.py batch --type evan_index --data-dir /path/to/data
-  python main.py batch --type surface_area --smoothing-iterations 150
-  python main.py batch --type volume_surface_ratio
+  # 批次處理 - 雙資料夾模式（NPH + 非NPH）
+  python main.py batch --type evan_index --nph-dir /path/to/nph --no-nph-dir /path/to/no_nph
+  python main.py batch --type centroid_ratio -n /path/to/nph -N /path/to/no_nph
+
+  # 批次處理 - 單一資料夾 + nph-list.txt（舊模式）
+  python main.py batch --type evan_index --data-dir /path/to/all_data
 
   # 單案例處理
   python main.py single --case-dir 000016209E --type centroid_ratio
-  python main.py single --case-dir data_5 --type surface_area
-  python main.py single --case-dir data_5 --type volume_surface_ratio
+  python main.py single --case-dir data_5 --type evan_index
         """
     )
 
@@ -60,8 +60,20 @@ def main():
 
     batch_parser.add_argument(
         '--data-dir', '-d',
-        default='/Volumes/Kuro醬の1TSSD/標記好的資料',
-        help='資料目錄路徑'
+        default=None,
+        help='資料目錄路徑（舊模式，與 nph-list.txt 配合使用）'
+    )
+
+    batch_parser.add_argument(
+        '--nph-dir', '-n',
+        default=None,
+        help='NPH 案例資料夾路徑（新模式）'
+    )
+
+    batch_parser.add_argument(
+        '--no-nph-dir', '-N',
+        default=None,
+        help='非 NPH 案例資料夾路徑（新模式）'
     )
 
     batch_parser.add_argument(
@@ -132,9 +144,24 @@ def main():
     # 根據子命令執行不同的處理
     if args.command == 'batch':
         # 批次處理
+        use_dual_mode = args.nph_dir is not None or args.no_nph_dir is not None
+
         print(f"模式: 批次處理")
         print(f"指標類型: {args.type}")
-        print(f"資料目錄: {args.data_dir}")
+
+        if use_dual_mode:
+            print(f"輸入模式: 雙資料夾（NPH + 非NPH）")
+            if args.nph_dir:
+                print(f"NPH 資料夾: {args.nph_dir}")
+            if args.no_nph_dir:
+                print(f"非 NPH 資料夾: {args.no_nph_dir}")
+        else:
+            if not args.data_dir:
+                print("錯誤：請指定 --data-dir 或 --nph-dir/--no-nph-dir")
+                return
+            print(f"輸入模式: 單一資料夾 + nph-list.txt")
+            print(f"資料目錄: {args.data_dir}")
+
         print(f"輸出目錄: result/{args.type}")
         print(f"跳過 _not_ok: {'是' if args.skip_not_ok else '否'}")
 
@@ -148,7 +175,9 @@ def main():
         batch_process(
             data_dir=args.data_dir,
             indicator_type=args.type,
-            skip_not_ok=args.skip_not_ok
+            skip_not_ok=args.skip_not_ok,
+            nph_dir=args.nph_dir,
+            no_nph_dir=args.no_nph_dir
         )
 
     elif args.command == 'single':

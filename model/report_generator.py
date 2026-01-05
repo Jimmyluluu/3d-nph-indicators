@@ -96,7 +96,8 @@ INDICATOR_CONFIGS = {
 }
 
 
-def generate_markdown_report(results, output_path, total_time, success_count, error_count, indicator_type='centroid_ratio'):
+def generate_markdown_report(results, output_path, total_time, success_count, error_count,
+                             indicator_type='centroid_ratio', use_is_nph_field=False):
     """
     統一的 Markdown 報表生成函數
 
@@ -107,6 +108,8 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
         success_count: 成功案例數
         error_count: 失敗案例數
         indicator_type: 指標類型 ('centroid_ratio' 或 'evan_index')
+        use_is_nph_field: 是否使用結果中的 is_nph 欄位來判斷 NPH 分類
+                          (True: 使用 is_nph 欄位, False: 使用 nph-list.txt)
 
     Raises:
         ValueError: 當指標類型不支援時
@@ -116,7 +119,17 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
         raise ValueError(f"不支援的指標類型: {indicator_type}。可用的類型: {list(INDICATOR_CONFIGS.keys())}")
 
     config = INDICATOR_CONFIGS[indicator_type]
-    nph_cases = load_nph_list()
+
+    # 決定如何判斷 NPH 分類
+    if use_is_nph_field:
+        # 新模式：從結果的 is_nph 欄位判斷
+        def is_nph_case(result):
+            return result.get('is_nph', False)
+    else:
+        # 舊模式：從 nph-list.txt 判斷
+        nph_cases = load_nph_list()
+        def is_nph_case(result):
+            return result.get('case_id') in nph_cases
 
     with open(output_path, 'w', encoding='utf-8') as f:
         # 報表標題
@@ -151,7 +164,7 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                     total_ratio = result.get(config['total_ratio_field'], 0)
                     time_str = result.get('processing_time', 'N/A')
 
-                    if case_id in nph_cases:
+                    if is_nph_case(result):
                         case_id_display = f"{case_id} ⚠️ NPH"
                     else:
                         case_id_display = case_id
@@ -171,7 +184,7 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                     percent = result.get(config['ratio_percent_field'], 0)
                     time_str = result.get('processing_time', 'N/A')
 
-                    if case_id in nph_cases:
+                    if is_nph_case(result):
                         case_id_display = f"{case_id} ⚠️ NPH"
                     else:
                         case_id_display = case_id
@@ -208,8 +221,8 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                 f.write(f"| {config['ratio_label']} | {min(ratios):.4f} | {max(ratios):.4f} | {sum(ratios)/len(ratios):.4f} | {sorted(ratios)[len(ratios)//2]:.4f} |\n")
 
             # NPH 和非 NPH 分組統計
-            nph_results = [r for r in successful_results if r.get('case_id') in nph_cases]
-            non_nph_results = [r for r in successful_results if r.get('case_id') not in nph_cases]
+            nph_results = [r for r in successful_results if is_nph_case(r)]
+            non_nph_results = [r for r in successful_results if not is_nph_case(r)]
 
             if nph_results:
                 f.write(f"\n### NPH 案例統計 (n={len(nph_results)})\n\n")

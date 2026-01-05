@@ -71,15 +71,54 @@ def scan_data_directory(base_dir, indicator_type, skip_not_ok=True):
     return sorted(valid_dirs)
 
 
-def batch_process(data_dir, indicator_type="centroid_ratio", skip_not_ok=True):
+def scan_multiple_directories(nph_dir, no_nph_dir, indicator_type, skip_not_ok=True):
+    """
+    掃描 NPH 和非 NPH 兩個資料夾
+
+    Args:
+        nph_dir: NPH 案例資料夾路徑
+        no_nph_dir: 非 NPH 案例資料夾路徑
+        indicator_type: 指標類型
+        skip_not_ok: 是否跳過標記為 _not_ok 的資料夾
+
+    Returns:
+        list: [(case_dir, is_nph), ...] 元組列表，依案例 ID 排序
+    """
+    results = []
+
+    # 掃描 NPH 資料夾
+    if nph_dir:
+        nph_cases = scan_data_directory(nph_dir, indicator_type, skip_not_ok)
+        for case_dir in nph_cases:
+            results.append((case_dir, True))
+
+    # 掃描非 NPH 資料夾
+    if no_nph_dir:
+        no_nph_cases = scan_data_directory(no_nph_dir, indicator_type, skip_not_ok)
+        for case_dir in no_nph_cases:
+            results.append((case_dir, False))
+
+    # 依案例 ID 排序
+    return sorted(results, key=lambda x: x[0].name)
+
+
+def batch_process(data_dir=None, indicator_type="centroid_ratio", skip_not_ok=True,
+                  nph_dir=None, no_nph_dir=None):
     """
     批次處理所有案例
 
     Args:
-        data_dir: 資料目錄路徑
+        data_dir: 資料目錄路徑（舊模式，與 nph-list.txt 配合使用）
         indicator_type: 指標類型
         skip_not_ok: 是否跳過標記為 _not_ok 的資料夾
+        nph_dir: NPH 案例資料夾路徑（新模式）
+        no_nph_dir: 非 NPH 案例資料夾路徑（新模式）
+
+    Note:
+        新模式（nph_dir + no_nph_dir）優先於舊模式（data_dir + nph-list.txt）
     """
+    # 判斷使用哪種模式
+    use_dual_mode = nph_dir is not None or no_nph_dir is not None
     # 設定輸出目錄
     output_dir = f"result/{indicator_type}"
     output_path = Path(output_dir)
@@ -109,7 +148,17 @@ def batch_process(data_dir, indicator_type="centroid_ratio", skip_not_ok=True):
 
     with ProcessLogger(log_file) as logger:
         logger.info(f"開始批次處理 - {indicator_name}")
-        logger.info(f"資料目錄: {data_dir}")
+
+        if use_dual_mode:
+            logger.info(f"模式: 雙資料夾輸入")
+            if nph_dir:
+                logger.info(f"NPH 資料夾: {nph_dir}")
+            if no_nph_dir:
+                logger.info(f"非 NPH 資料夾: {no_nph_dir}")
+        else:
+            logger.info(f"模式: 單一資料夾 + nph-list.txt")
+            logger.info(f"資料目錄: {data_dir}")
+
         logger.info(f"輸出目錄: {output_dir}")
         logger.info(f"跳過 _not_ok: {skip_not_ok}")
 
@@ -118,14 +167,26 @@ def batch_process(data_dir, indicator_type="centroid_ratio", skip_not_ok=True):
 
         # 掃描資料目錄
         try:
-            case_dirs = scan_data_directory(data_dir, indicator_type, skip_not_ok=skip_not_ok)
-            total_cases = len(case_dirs)
+            if use_dual_mode:
+                # 新模式：從兩個資料夾掃描，返回 (case_dir, is_nph) 元組
+                case_items = scan_multiple_directories(nph_dir, no_nph_dir, indicator_type, skip_not_ok=skip_not_ok)
+                total_cases = len(case_items)
+            else:
+                # 舊模式：從單一資料夾掃描
+                case_dirs = scan_data_directory(data_dir, indicator_type, skip_not_ok=skip_not_ok)
+                case_items = [(d, None) for d in case_dirs]  # is_nph = None 表示使用 nph-list.txt
+                total_cases = len(case_items)
 
             if total_cases == 0:
                 logger.warning("沒有找到有效的案例資料夾！")
                 return
 
-            logger.info(f"找到 {total_cases} 個有效案例")
+            if use_dual_mode:
+                nph_count = sum(1 for _, is_nph in case_items if is_nph)
+                no_nph_count = sum(1 for _, is_nph in case_items if not is_nph)
+                logger.info(f"找到 {total_cases} 個有效案例（NPH: {nph_count}, 非 NPH: {no_nph_count}）")
+            else:
+                logger.info(f"找到 {total_cases} 個有效案例")
             logger.info("=" * 70)
 
         except Exception as e:
@@ -139,11 +200,14 @@ def batch_process(data_dir, indicator_type="centroid_ratio", skip_not_ok=True):
         start_time = time.time()
 
         # 逐一處理每個案例
-        for i, case_dir in enumerate(case_dirs, 1):
+        for i, (case_dir, is_nph) in enumerate(case_items, 1):
             case_id = case_dir.name
             case_start_time = time.time()
 
-            logger.info(f"\n[{i}/{total_cases}] 處理案例: {case_id}")
+            nph_label = ""
+            if use_dual_mode:
+                nph_label = " [NPH]" if is_nph else " [非NPH]"
+            logger.info(f"\n[{i}/{total_cases}] 處理案例: {case_id}{nph_label}")
 
             try:
                 # 為每個案例建立獨立資料夾
@@ -163,6 +227,8 @@ def batch_process(data_dir, indicator_type="centroid_ratio", skip_not_ok=True):
                 processing_time = time.time() - case_start_time
                 result['processing_time'] = f"{processing_time:.2f}s"
                 result['case_id'] = case_id
+                if use_dual_mode:
+                    result['is_nph'] = is_nph
 
                 # 記錄結果
                 if result['status'] == 'success':
@@ -235,7 +301,8 @@ def batch_process(data_dir, indicator_type="centroid_ratio", skip_not_ok=True):
         # 產生 Markdown 報表
         logger.info("\n產生 Markdown 報表...")
         md_path = output_path / "results_summary.md"
-        generate_markdown_report(results, md_path, total_time, success_count, error_count, indicator_type)
+        generate_markdown_report(results, md_path, total_time, success_count, error_count,
+                                 indicator_type, use_is_nph_field=use_dual_mode)
         logger.success(f"Markdown 報表已儲存: {md_path}")
 
         logger.info("\n結果檔案位置:")
