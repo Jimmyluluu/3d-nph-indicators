@@ -12,7 +12,7 @@
 import argparse
 from pathlib import Path
 from processors.batch_processor import batch_process
-from processors.case_processor import process_case_indicator_ratio, process_case_evan_index, process_case_surface_area, process_case_volume_surface_ratio
+from processors.case_processor import process_case_indicator_ratio, process_case_evan_index, process_case_surface_area, process_case_volume_surface_ratio, process_case_alvi
 
 
 def main():
@@ -53,7 +53,7 @@ def main():
 
     batch_parser.add_argument(
         '--type', '-t',
-        choices=['centroid_ratio', 'evan_index', 'surface_area', 'volume_surface_ratio'],
+        choices=['centroid_ratio', 'evan_index', 'surface_area', 'volume_surface_ratio', 'alvi'],
         default='centroid_ratio',
         help='指標類型（預設: centroid_ratio）'
     )
@@ -108,7 +108,7 @@ def main():
 
     single_parser.add_argument(
         '--type', '-t',
-        choices=['centroid_ratio', 'evan_index', 'surface_area', 'volume_surface_ratio'],
+        choices=['centroid_ratio', 'evan_index', 'surface_area', 'volume_surface_ratio', 'alvi'],
         default='centroid_ratio',
         help='指標類型（預設: centroid_ratio）'
     )
@@ -228,6 +228,13 @@ def main():
             )
         elif args.type == 'volume_surface_ratio':
             result = process_case_volume_surface_ratio(
+                data_dir=str(case_dir),
+                output_image_path=str(output_path),
+                show_plot=args.show_plot,
+                verbose=True
+            )
+        elif args.type == 'alvi':
+            result = process_case_alvi(
                 data_dir=str(case_dir),
                 output_image_path=str(output_path),
                 show_plot=args.show_plot,

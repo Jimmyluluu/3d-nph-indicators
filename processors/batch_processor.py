@@ -7,12 +7,13 @@
 import time
 from pathlib import Path
 from processors.logger import ProcessLogger
-from processors.case_processor import process_case_indicator_ratio, process_case_evan_index, process_case_surface_area, process_case_volume_surface_ratio
+from processors.case_processor import process_case_indicator_ratio, process_case_evan_index, process_case_surface_area, process_case_volume_surface_ratio, process_case_alvi
 from model.report_generator import generate_markdown_report, INDICATOR_CONFIGS, format_time
 from model.evan_index_analyzer import EvanIndexAnalyzer
 from model.volume_surface_analyzer import VolumeSurfaceAnalyzer
 from model.ventricle_volume_analyzer import VentricleVolumeAnalyzer
 from model.surface_area_analyzer import SurfaceAreaAnalyzer
+from model.alvi_result_analyzer import ALVIResultAnalyzer
 import datetime
 import os
 
@@ -153,6 +154,9 @@ def batch_process(data_dir=None, indicator_type="centroid_ratio", skip_not_ok=Tr
     elif indicator_type == "volume_surface_ratio":
         process_func = lambda data_dir, output_path, show_plot=False, verbose=True: process_case_volume_surface_ratio(data_dir, output_path, show_plot=show_plot, verbose=verbose)
         indicator_name = "體積與表面積比例"
+    elif indicator_type == "alvi":
+        process_func = lambda data_dir, output_path, show_plot=False, verbose=True: process_case_alvi(data_dir, output_path, show_plot=show_plot, verbose=verbose)
+        indicator_name = "ALVI (Anteroposterior Lateral Ventricle Index)"
     else:
         raise ValueError(f"不支援的指標類型: {indicator_type}")
 
@@ -262,6 +266,10 @@ def batch_process(data_dir=None, indicator_type="centroid_ratio", skip_not_ok=Tr
                         logger.info(f"     右腦室表面積: {result['right_surface_area']:.2f} mm²")
                         logger.info(f"     總表面積: {result['total_surface_area']:.2f} mm²")
                         logger.info(f"     V/SA 比例: {result['total_ratio']:.4f} mm")
+                    elif indicator_type == "alvi":
+                        logger.info(f"     腦室前後徑: {result['ventricle_ap_diameter_mm']:.2f} mm")
+                        logger.info(f"     顱骨前後徑: {result['skull_ap_diameter_mm']:.2f} mm")
+                        logger.info(f"     ALVI: {result['alvi']:.4f} ({result['alvi_percent']:.2f}%)")
 
                     logger.info(f"     處理時間: {processing_time:.1f}s")
                 else:
@@ -381,6 +389,27 @@ def batch_process(data_dir=None, indicator_type="centroid_ratio", skip_not_ok=Tr
                 sa_roc_path = output_path / sa_roc_filename
                 sa_analyzer.generate_roc_curve(str(sa_roc_path))
                 logger.success(f"表面積 ROC 曲線已生成: {sa_roc_path}")
+                
+            except Exception as e:
+                logger.error(f"進階分析執行失敗: {str(e)}", e)
+
+        # 如果是 ALVI，自動執行進階分析與 ROC 曲線
+        if indicator_type == "alvi":
+            try:
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+                
+                logger.info("\n執行 ALVI 進階分析...")
+                alvi_analyzer = ALVIResultAnalyzer(str(md_path))
+                
+                alvi_analysis_filename = f'alvi_analysis_{timestamp}.md'
+                alvi_analysis_path = output_path / alvi_analysis_filename
+                alvi_analyzer.generate_report(str(alvi_analysis_path))
+                logger.success(f"ALVI 分析報告已生成: {alvi_analysis_path}")
+                
+                alvi_roc_filename = f'alvi_roc_{timestamp}.png'
+                alvi_roc_path = output_path / alvi_roc_filename
+                alvi_analyzer.generate_roc_curve(str(alvi_roc_path))
+                logger.success(f"ALVI ROC 曲線已生成: {alvi_roc_path}")
                 
             except Exception as e:
                 logger.error(f"進階分析執行失敗: {str(e)}", e)

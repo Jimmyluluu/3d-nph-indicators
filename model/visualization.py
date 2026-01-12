@@ -731,3 +731,180 @@ def visualize_volume_surface_ratio(left_ventricle, right_ventricle, ratio_data,
 
     return fig
 
+
+def visualize_alvi(left_ventricle, right_ventricle, original_img, alvi_data,
+                   output_path="alvi.png", show_plot=True):
+    """
+    視覺化 ALVI (Anteroposterior Lateral Ventricle Index)
+    
+    顯示腦室前後徑和顱骨前後徑的測量線
+    
+    Args:
+        left_ventricle: 左腦室影像物件
+        right_ventricle: 右腦室影像物件
+        original_img: 原始腦部影像物件
+        alvi_data: ALVI 計算結果字典
+        output_path: 輸出圖片路徑
+        show_plot: 是否顯示互動式圖表
+    
+    Returns:
+        plotly figure物件
+    """
+    # 延遲匯入以避免循環引用
+    from model.calculation import calculate_centroid_3d
+    
+    print(f"\n準備 ALVI 視覺化...")
+    
+    # 建立圖表
+    fig = go.Figure()
+    
+    # 1. 繪製腦部表面網格
+    try:
+        original_data = get_image_data(original_img)
+        threshold = np.percentile(original_data[original_data > 0], 30)
+        
+        brain_mesh = extract_surface_mesh(original_img, level=threshold, verbose=False)
+        verts_physical = brain_mesh['vertices_physical']
+        faces = brain_mesh['faces']
+        
+        fig.add_trace(go.Mesh3d(
+            x=verts_physical[:, 0],
+            y=verts_physical[:, 1],
+            z=verts_physical[:, 2],
+            i=faces[:, 0],
+            j=faces[:, 1],
+            k=faces[:, 2],
+            color='lightgray',
+            opacity=0.15,
+            name='Brain Surface',
+            showlegend=True,
+            lighting=dict(ambient=0.6, diffuse=0.8, specular=0.2),
+            flatshading=False
+        ))
+        print(f"✓ 腦部表面已加入")
+    except Exception as e:
+        print(f"警告: 無法提取腦部表面 - {str(e)}")
+    
+    # 2. 顯示左腦室
+    try:
+        left_mesh = extract_surface_mesh(left_ventricle, level=0.5, verbose=False)
+        left_verts = left_mesh['vertices_physical']
+        left_faces = left_mesh['faces']
+        
+        fig.add_trace(go.Mesh3d(
+            x=left_verts[:, 0],
+            y=left_verts[:, 1],
+            z=left_verts[:, 2],
+            i=left_faces[:, 0],
+            j=left_faces[:, 1],
+            k=left_faces[:, 2],
+            color='blue',
+            opacity=0.4,
+            name='Left Ventricle',
+            showlegend=True,
+            lighting=dict(ambient=0.6, diffuse=0.8, specular=0.2),
+            flatshading=False
+        ))
+        print(f"✓ 左腦室已加入")
+    except Exception as e:
+        print(f"警告: 無法提取左腦室表面 - {str(e)}")
+    
+    # 3. 顯示右腦室
+    try:
+        right_mesh = extract_surface_mesh(right_ventricle, level=0.5, verbose=False)
+        right_verts = right_mesh['vertices_physical']
+        right_faces = right_mesh['faces']
+        
+        fig.add_trace(go.Mesh3d(
+            x=right_verts[:, 0],
+            y=right_verts[:, 1],
+            z=right_verts[:, 2],
+            i=right_faces[:, 0],
+            j=right_faces[:, 1],
+            k=right_faces[:, 2],
+            color='red',
+            opacity=0.4,
+            name='Right Ventricle',
+            showlegend=True,
+            lighting=dict(ambient=0.6, diffuse=0.8, specular=0.2),
+            flatshading=False
+        ))
+        print(f"✓ 右腦室已加入")
+    except Exception as e:
+        print(f"警告: 無法提取右腦室表面 - {str(e)}")
+    
+    # 4. 顯示腦室前後徑測量線
+    vent_anterior = alvi_data['ventricle_endpoints']['anterior']
+    vent_posterior = alvi_data['ventricle_endpoints']['posterior']
+    vent_diameter = alvi_data['ventricle_ap_diameter_mm']
+    
+    # 腦室前後端點
+    fig.add_trace(go.Scatter3d(
+        x=[vent_anterior[0], vent_posterior[0]],
+        y=[vent_anterior[1], vent_posterior[1]],
+        z=[vent_anterior[2], vent_posterior[2]],
+        mode='markers+lines',
+        marker=dict(size=8, color='gold', symbol='diamond'),
+        line=dict(color='gold', width=6),
+        name=f'Ventricle AP: {vent_diameter:.2f} mm',
+        showlegend=True
+    ))
+    
+    # 5. 顯示顱骨前後徑測量線
+    skull_anterior = alvi_data['skull_endpoints']['anterior']
+    skull_posterior = alvi_data['skull_endpoints']['posterior']
+    skull_diameter = alvi_data['skull_ap_diameter_mm']
+    
+    # 顱骨前後端點
+    fig.add_trace(go.Scatter3d(
+        x=[skull_anterior[0], skull_posterior[0]],
+        y=[skull_anterior[1], skull_posterior[1]],
+        z=[skull_anterior[2], skull_posterior[2]],
+        mode='markers+lines',
+        marker=dict(size=8, color='cyan', symbol='diamond'),
+        line=dict(color='cyan', width=6),
+        name=f'Skull AP: {skull_diameter:.2f} mm',
+        showlegend=True
+    ))
+    
+    # 6. 設定版面
+    alvi = alvi_data['alvi']
+    alvi_percent = alvi_data['alvi_percent']
+    
+    # 判斷 NPH 風險
+    risk_status = "⚠️ NPH Risk" if alvi > 0.5 else "✓ Normal"
+    
+    fig.update_layout(
+        title={
+            'text': f"ALVI Analysis<br>" +
+                    f"<sub>Ventricle AP: {vent_diameter:.2f} mm | Skull AP: {skull_diameter:.2f} mm | " +
+                    f"ALVI: {alvi:.4f} ({alvi_percent:.2f}%) | {risk_status}</sub>",
+            'x': 0.5,
+            'xanchor': 'center',
+            'font': {'size': 18}
+        },
+        scene=dict(
+            xaxis=dict(title='X (mm)', backgroundcolor="rgb(230, 230,230)",
+                      gridcolor="white", showbackground=True),
+            yaxis=dict(title='Y (mm) - Ant/Post', backgroundcolor="rgb(230, 230, 230)",
+                      gridcolor="white", showbackground=True),
+            zaxis=dict(title='Z (mm)', backgroundcolor="rgb(230, 230, 230)",
+                      gridcolor="white", showbackground=True),
+            aspectmode='data'
+        ),
+        width=1200,
+        height=900,
+        showlegend=True,
+        legend=dict(x=0.02, y=0.98, bgcolor='rgba(255,255,255,0.8)')
+    )
+    
+    # 只儲存 HTML（互動式 3D，不儲存 PNG 以加速）
+    html_path = output_path.replace('.png', '.html')
+    fig.write_html(html_path)
+    print(f"✓ 互動式 3D 已儲存: {html_path}")
+    
+    # 顯示圖表
+    if show_plot:
+        fig.show()
+    
+    return fig

@@ -75,6 +75,17 @@ INDICATOR_CONFIGS = {
         'ratio_percent_field': 'evan_index_percent',
         'footer': '3D Evan Index Calculator'
     },
+    'alvi': {
+        'title': 'ALVI 批次處理報表',
+        'distance_field': 'ventricle_ap_diameter_mm',
+        'distance_label': '腦室前後徑 (mm)',
+        'ratio_field': 'alvi',
+        'ratio_label': 'ALVI',
+        'ratio_percent_field': 'alvi_percent',
+        'additional_field': 'skull_ap_diameter_mm',
+        'additional_label': '顱骨前後徑 (mm)',
+        'footer': 'ALVI Calculator'
+    },
     'volume_surface_ratio': {
         'title': '腦室體積與表面積比例批次處理報表',
         'left_volume_field': 'left_volume',
@@ -172,14 +183,23 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                     f.write(f"| {case_id_display} | {left_volume:.1f} | {right_volume:.1f} | {total_volume:.1f} | {total_ratio:.4f} | {time_str} |\n")
 
             else:
-                # 原有的 distance/ratio 格式 (centroid_ratio, evan_index)
-                f.write(f"| 案例 ID | {config['distance_label']} | 顱內寬度 (mm) | {config['ratio_label']} | 百分比 | 處理時間 |\n")
+                # 原有的 distance/ratio 格式 (centroid_ratio, evan_index, alvi)
+                # ALVI 使用 skull_ap_diameter_mm 而非 cranial_width_mm
+                width_label = config.get('additional_label', '顱內寬度 (mm)')
+                
+                f.write(f"| 案例 ID | {config['distance_label']} | {width_label} | {config['ratio_label']} | 百分比 | 處理時間 |\n")
                 f.write("|---------|---------------|---------------|------|--------|----------|\n")
 
                 for result in successful_results:
                     case_id = result.get('case_id', 'N/A')
                     distance = result.get(config['distance_field'], 0)
-                    width = result.get('cranial_width_mm', 0)
+                    
+                    # 根據指標類型選擇正確的寬度欄位
+                    if indicator_type == 'alvi':
+                        width = result.get(config.get('additional_field', 'skull_ap_diameter_mm'), 0)
+                    else:
+                        width = result.get('cranial_width_mm', 0)
+                    
                     ratio = result.get(config['ratio_field'], 0)
                     percent = result.get(config['ratio_percent_field'], 0)
                     time_str = result.get('processing_time', 'N/A')
@@ -210,14 +230,22 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
             else:
                 # 原有的 distance/ratio 統計
                 distances = [r[config['distance_field']] for r in successful_results]
-                widths = [r['cranial_width_mm'] for r in successful_results]
+                
+                # 根據指標類型選擇正確的寬度欄位
+                if indicator_type == 'alvi':
+                    widths = [r.get(config.get('additional_field', 'skull_ap_diameter_mm'), 0) for r in successful_results]
+                    width_label = config.get('additional_label', '顱骨前後徑 (mm)')
+                else:
+                    widths = [r['cranial_width_mm'] for r in successful_results]
+                    width_label = '顱內寬度 (mm)'
+                
                 ratios = [r[config['ratio_field']] for r in successful_results]
 
                 f.write("\n### 統計數據（全部案例）\n\n")
                 f.write("| 指標 | 最小值 | 最大值 | 平均值 | 中位數 |\n")
                 f.write("|------|--------|--------|--------|--------|\n")
                 f.write(f"| {config['distance_label']} | {min(distances):.2f} | {max(distances):.2f} | {sum(distances)/len(distances):.2f} | {sorted(distances)[len(distances)//2]:.2f} |\n")
-                f.write(f"| 顱內寬度 (mm) | {min(widths):.2f} | {max(widths):.2f} | {sum(widths)/len(widths):.2f} | {sorted(widths)[len(widths)//2]:.2f} |\n")
+                f.write(f"| {width_label} | {min(widths):.2f} | {max(widths):.2f} | {sum(widths)/len(widths):.2f} | {sorted(widths)[len(widths)//2]:.2f} |\n")
                 f.write(f"| {config['ratio_label']} | {min(ratios):.4f} | {max(ratios):.4f} | {sum(ratios)/len(ratios):.4f} | {sorted(ratios)[len(ratios)//2]:.4f} |\n")
 
             # NPH 和非 NPH 分組統計
@@ -236,15 +264,23 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                     f.write(f"| {config['total_volume_label']} | {min(nph_total_volumes):.1f} | {max(nph_total_volumes):.1f} | {sum(nph_total_volumes)/len(nph_total_volumes):.1f} | {sorted(nph_total_volumes)[len(nph_total_volumes)//2]:.1f} |\n")
                     f.write(f"| {config['total_ratio_label']} | {min(nph_total_ratios):.4f} | {max(nph_total_ratios):.4f} | {sum(nph_total_ratios)/len(nph_total_ratios):.4f} | {sorted(nph_total_ratios)[len(nph_total_ratios)//2]:.4f} |\n")
                 else:
-                    # 原有的 distance/ratio 統計 (centroid_ratio, evan_index)
+                    # 原有的 distance/ratio 統計 (centroid_ratio, evan_index, alvi)
                     nph_distances = [r[config['distance_field']] for r in nph_results]
-                    nph_widths = [r['cranial_width_mm'] for r in nph_results]
+                    
+                    # 根據指標類型選擇正確的寬度欄位
+                    if indicator_type == 'alvi':
+                        nph_widths = [r.get(config.get('additional_field', 'skull_ap_diameter_mm'), 0) for r in nph_results]
+                        width_label = config.get('additional_label', '顱骨前後徑 (mm)')
+                    else:
+                        nph_widths = [r['cranial_width_mm'] for r in nph_results]
+                        width_label = '顱內寬度 (mm)'
+                    
                     nph_ratios = [r[config['ratio_field']] for r in nph_results]
 
                     f.write("| 指標 | 最小值 | 最大值 | 平均值 | 中位數 |\n")
                     f.write("|------|--------|--------|--------|--------|\n")
                     f.write(f"| {config['distance_label']} | {min(nph_distances):.2f} | {max(nph_distances):.2f} | {sum(nph_distances)/len(nph_distances):.2f} | {sorted(nph_distances)[len(nph_distances)//2]:.2f} |\n")
-                    f.write(f"| 顱內寬度 (mm) | {min(nph_widths):.2f} | {max(nph_widths):.2f} | {sum(nph_widths)/len(nph_widths):.2f} | {sorted(nph_widths)[len(nph_widths)//2]:.2f} |\n")
+                    f.write(f"| {width_label} | {min(nph_widths):.2f} | {max(nph_widths):.2f} | {sum(nph_widths)/len(nph_widths):.2f} | {sorted(nph_widths)[len(nph_widths)//2]:.2f} |\n")
                     f.write(f"| {config['ratio_label']} | {min(nph_ratios):.4f} | {max(nph_ratios):.4f} | {sum(nph_ratios)/len(nph_ratios):.4f} | {sorted(nph_ratios)[len(nph_ratios)//2]:.4f} |\n")
 
             if non_nph_results:
@@ -259,15 +295,23 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                     f.write(f"| {config['total_volume_label']} | {min(non_nph_total_volumes):.1f} | {max(non_nph_total_volumes):.1f} | {sum(non_nph_total_volumes)/len(non_nph_total_volumes):.1f} | {sorted(non_nph_total_volumes)[len(non_nph_total_volumes)//2]:.1f} |\n")
                     f.write(f"| {config['total_ratio_label']} | {min(non_nph_total_ratios):.4f} | {max(non_nph_total_ratios):.4f} | {sum(non_nph_total_ratios)/len(non_nph_total_ratios):.4f} | {sorted(non_nph_total_ratios)[len(non_nph_total_ratios)//2]:.4f} |\n")
                 else:
-                    # 原有的 distance/ratio 統計 (centroid_ratio, evan_index)
+                    # 原有的 distance/ratio 統計 (centroid_ratio, evan_index, alvi)
                     non_nph_distances = [r[config['distance_field']] for r in non_nph_results]
-                    non_nph_widths = [r['cranial_width_mm'] for r in non_nph_results]
+                    
+                    # 根據指標類型選擇正確的寬度欄位
+                    if indicator_type == 'alvi':
+                        non_nph_widths = [r.get(config.get('additional_field', 'skull_ap_diameter_mm'), 0) for r in non_nph_results]
+                        width_label = config.get('additional_label', '顱骨前後徑 (mm)')
+                    else:
+                        non_nph_widths = [r['cranial_width_mm'] for r in non_nph_results]
+                        width_label = '顱內寬度 (mm)'
+                    
                     non_nph_ratios = [r[config['ratio_field']] for r in non_nph_results]
 
                     f.write("| 指標 | 最小值 | 最大值 | 平均值 | 中位數 |\n")
                     f.write("|------|--------|--------|--------|--------|\n")
                     f.write(f"| {config['distance_label']} | {min(non_nph_distances):.2f} | {max(non_nph_distances):.2f} | {sum(non_nph_distances)/len(non_nph_distances):.2f} | {sorted(non_nph_distances)[len(non_nph_distances)//2]:.2f} |\n")
-                    f.write(f"| 顱內寬度 (mm) | {min(non_nph_widths):.2f} | {max(non_nph_widths):.2f} | {sum(non_nph_widths)/len(non_nph_widths):.2f} | {sorted(non_nph_widths)[len(non_nph_widths)//2]:.2f} |\n")
+                    f.write(f"| {width_label} | {min(non_nph_widths):.2f} | {max(non_nph_widths):.2f} | {sum(non_nph_widths)/len(non_nph_widths):.2f} | {sorted(non_nph_widths)[len(non_nph_widths)//2]:.2f} |\n")
                     f.write(f"| {config['ratio_label']} | {min(non_nph_ratios):.4f} | {max(non_nph_ratios):.4f} | {sum(non_nph_ratios)/len(non_nph_ratios):.4f} | {sorted(non_nph_ratios)[len(non_nph_ratios)//2]:.4f} |\n")
 
             # 組間差異
@@ -299,10 +343,19 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                 else:
                     # 原有的 distance/ratio 組間差異計算
                     nph_distances = [r[config['distance_field']] for r in nph_results]
-                    nph_widths = [r['cranial_width_mm'] for r in nph_results]
-                    nph_ratios = [r[config['ratio_field']] for r in nph_results]
                     non_nph_distances = [r[config['distance_field']] for r in non_nph_results]
-                    non_nph_widths = [r['cranial_width_mm'] for r in non_nph_results]
+                    
+                    # 根據指標類型選擇正確的寬度欄位
+                    if indicator_type == 'alvi':
+                        nph_widths = [r.get(config.get('additional_field', 'skull_ap_diameter_mm'), 0) for r in nph_results]
+                        non_nph_widths = [r.get(config.get('additional_field', 'skull_ap_diameter_mm'), 0) for r in non_nph_results]
+                        width_label = config.get('additional_label', '顱骨前後徑')
+                    else:
+                        nph_widths = [r['cranial_width_mm'] for r in nph_results]
+                        non_nph_widths = [r['cranial_width_mm'] for r in non_nph_results]
+                        width_label = '顱內寬度'
+                    
+                    nph_ratios = [r[config['ratio_field']] for r in nph_results]
                     non_nph_ratios = [r[config['ratio_field']] for r in non_nph_results]
 
                     nph_dist_mean = sum(nph_distances) / len(nph_distances)
@@ -315,7 +368,7 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                     non_nph_width_mean = sum(non_nph_widths) / len(non_nph_widths)
                     width_diff = nph_width_mean - non_nph_width_mean
                     width_pct = (width_diff / non_nph_width_mean) * 100
-                    f.write(f"| 顱內寬度 | {nph_width_mean:.2f} mm | {non_nph_width_mean:.2f} mm | {width_diff:+.2f} mm | {width_pct:+.1f}% |\n")
+                    f.write(f"| {width_label} | {nph_width_mean:.2f} mm | {non_nph_width_mean:.2f} mm | {width_diff:+.2f} mm | {width_pct:+.1f}% |\n")
 
                     nph_ratio_mean = sum(nph_ratios) / len(nph_ratios)
                     non_nph_ratio_mean = sum(non_nph_ratios) / len(non_nph_ratios)

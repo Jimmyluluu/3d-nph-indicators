@@ -15,10 +15,12 @@ from model.calculation import (
     calculate_surface_area,
     calculate_volume_surface_ratio
 )
+from model.alvi_analyzer import calculate_alvi
 from model.visualization import (
     visualize_ventricle_distance,
     visualize_3d_evan_index,
     visualize_volume_surface_ratio,
+    visualize_alvi,
 )
 
 from processors.printers import (
@@ -368,6 +370,69 @@ def process_case_volume_surface_ratio(data_dir, output_image_path, show_plot=Fal
             'right_surface_area': ratio_data['right_surface_area'],
             'total_surface_area': ratio_data['total_surface_area'],
             'total_ratio': ratio_data['total_ratio']
+        }
+
+    except Exception as e:
+        return {
+            'status': 'error',
+            'error_message': str(e),
+            'error_type': type(e).__name__
+        }
+
+
+def process_case_alvi(data_dir, output_image_path, show_plot=False, verbose=True):
+    """
+    處理單一案例 - ALVI (Anteroposterior Lateral Ventricle Index)
+
+    Args:
+        data_dir: 資料目錄路徑
+        output_image_path: 輸出圖片路徑
+        show_plot: 是否顯示互動式圖表
+        verbose: 是否顯示詳細資訊
+
+    Returns:
+        dict: 包含所有測量結果的字典
+    """
+    try:
+        # 使用統一的檔案路徑查找函數
+        files = find_case_files(data_dir, require_original=True, require_falx=False)
+        left_path = files['left_path']
+        right_path = files['right_path']
+        original_path = files['original_path']
+
+        # 載入腦室影像（自動拉正到 RAS+ 方向）
+        left_vent, right_vent = load_ventricle_pair(
+            str(left_path), str(right_path), verbose=verbose
+        )
+
+        # 載入原始影像（自動拉正到 RAS+ 方向）
+        original_img = load_original_image(str(original_path), verbose=verbose)
+
+        # 計算 ALVI
+        alvi_data = calculate_alvi(
+            left_vent, right_vent, original_img,
+            verbose=verbose
+        )
+
+        # 視覺化
+        visualize_alvi(
+            left_vent, right_vent, original_img,
+            alvi_data,
+            output_path=str(output_image_path),
+            show_plot=show_plot
+        )
+
+        # 返回成功結果
+        return {
+            'status': 'success',
+            'ventricle_ap_diameter_mm': alvi_data['ventricle_ap_diameter_mm'],
+            'skull_ap_diameter_mm': alvi_data['skull_ap_diameter_mm'],
+            'alvi': alvi_data['alvi'],
+            'alvi_percent': alvi_data['alvi_percent'],
+            'ventricle_endpoints': alvi_data['ventricle_endpoints'],
+            'skull_endpoints': alvi_data['skull_endpoints'],
+            'z_range': list(alvi_data['z_range']),
+            'voxel_size': list(alvi_data['voxel_size'])
         }
 
     except Exception as e:
