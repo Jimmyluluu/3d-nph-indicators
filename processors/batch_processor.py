@@ -9,11 +9,7 @@ from pathlib import Path
 from processors.logger import ProcessLogger
 from processors.case_processor import process_case_indicator_ratio, process_case_evan_index, process_case_surface_area, process_case_volume_surface_ratio, process_case_alvi
 from model.report_generator import generate_markdown_report, INDICATOR_CONFIGS, format_time
-from model.evan_index_analyzer import EvanIndexAnalyzer
-from model.volume_surface_analyzer import VolumeSurfaceAnalyzer
-from model.ventricle_volume_analyzer import VentricleVolumeAnalyzer
-from model.surface_area_analyzer import SurfaceAreaAnalyzer
-from model.alvi_result_analyzer import ALVIResultAnalyzer
+from model.result_analyzer import create_analyzer
 import datetime
 import os
 
@@ -324,7 +320,7 @@ def batch_process(data_dir=None, indicator_type="centroid_ratio", skip_not_ok=Tr
         if indicator_type == "evan_index":
             try:
                 logger.info("\n執行 Evan Index 進階分析...")
-                analyzer = EvanIndexAnalyzer(str(md_path))
+                analyzer = create_analyzer('evan_index', str(md_path))
                 
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
                 
@@ -350,7 +346,7 @@ def batch_process(data_dir=None, indicator_type="centroid_ratio", skip_not_ok=Tr
                 
                 # 1. V/SA Ratio 分析
                 logger.info("\n執行 V/SA Ratio 進階分析...")
-                vs_analyzer = VolumeSurfaceAnalyzer(str(md_path))
+                vs_analyzer = create_analyzer('volume_surface_ratio', str(md_path))
                 
                 vs_analysis_filename = f'vs_ratio_analysis_{timestamp}.md'
                 vs_analysis_path = output_path / vs_analysis_filename
@@ -364,7 +360,7 @@ def batch_process(data_dir=None, indicator_type="centroid_ratio", skip_not_ok=Tr
                 
                 # 2. 體積分析
                 logger.info("\n執行腦室體積進階分析...")
-                vol_analyzer = VentricleVolumeAnalyzer(str(md_path))
+                vol_analyzer = create_analyzer('ventricle_volume', str(md_path))
                 
                 vol_analysis_filename = f'volume_analysis_{timestamp}.md'
                 vol_analysis_path = output_path / vol_analysis_filename
@@ -378,7 +374,7 @@ def batch_process(data_dir=None, indicator_type="centroid_ratio", skip_not_ok=Tr
                 
                 # 3. 表面積分析
                 logger.info("\n執行腦室表面積進階分析...")
-                sa_analyzer = SurfaceAreaAnalyzer(str(md_path))
+                sa_analyzer = create_analyzer('surface_area', str(md_path))
                 
                 sa_analysis_filename = f'surface_area_analysis_{timestamp}.md'
                 sa_analysis_path = output_path / sa_analysis_filename
@@ -399,16 +395,16 @@ def batch_process(data_dir=None, indicator_type="centroid_ratio", skip_not_ok=Tr
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
                 
                 logger.info("\n執行 ALVI 進階分析...")
-                alvi_analyzer = ALVIResultAnalyzer(str(md_path))
+                analyzer = create_analyzer('alvi', str(md_path))
                 
                 alvi_analysis_filename = f'alvi_analysis_{timestamp}.md'
                 alvi_analysis_path = output_path / alvi_analysis_filename
-                alvi_analyzer.generate_report(str(alvi_analysis_path))
+                analyzer.generate_report(str(alvi_analysis_path))
                 logger.success(f"ALVI 分析報告已生成: {alvi_analysis_path}")
                 
                 alvi_roc_filename = f'alvi_roc_{timestamp}.png'
                 alvi_roc_path = output_path / alvi_roc_filename
-                alvi_analyzer.generate_roc_curve(str(alvi_roc_path))
+                analyzer.generate_roc_curve(str(alvi_roc_path))
                 logger.success(f"ALVI ROC 曲線已生成: {alvi_roc_path}")
                 
             except Exception as e:
