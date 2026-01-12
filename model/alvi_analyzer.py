@@ -31,7 +31,7 @@ def get_largest_connected_component(data):
     return cleaned_data
 
 
-def calculate_ventricle_ap_diameter(left_vent, right_vent, falx_img=None, z_range_percent=(0.3, 0.7), verbose=True):
+def calculate_ventricle_ap_diameter(left_vent, right_vent, falx_img, z_range_percent=(0.3, 0.7), verbose=True):
     """
     計算腦室體部的前後徑 (使用 PCA 方法)
     
@@ -40,7 +40,7 @@ def calculate_ventricle_ap_diameter(left_vent, right_vent, falx_img=None, z_rang
     Args:
         left_vent: 左腦室影像物件
         right_vent: 右腦室影像物件
-        falx_img: Falx 影像物件 (用於定義中線，可選)
+        falx_img: Falx 影像物件 (必要,用於定義中線)
         z_range_percent: Z 軸篩選範圍 (預設 30%-70% 為體部)
         verbose: 是否顯示計算過程
     
@@ -58,6 +58,9 @@ def calculate_ventricle_ap_diameter(left_vent, right_vent, falx_img=None, z_rang
     if verbose:
         print("計算腦室前後徑 (PCA 方法 - 取左右最大值)...")
     
+    if falx_img is None:
+        raise ValueError("必須提供 Falx 影像以計算腦室前後徑!")
+    
     # Step 1: 取得左右腦室非零點 (先進行連通區域過濾，去除非主體的噪聲島)
     left_data_raw = get_image_data(left_vent)
     left_data = get_largest_connected_component(left_data_raw)
@@ -73,57 +76,28 @@ def calculate_ventricle_ap_diameter(left_vent, right_vent, falx_img=None, z_rang
         print(f"  左腦室點數 (去噪後): {len(left_points)}")
         print(f"  右腦室點數 (去噪後): {len(right_points)}")
     
-    # Step 1.5: 過濾跨越中線的錯誤標記點
-    if falx_img is not None:
-        # 使用 Falx 平面作為中線
-        try:
-            falx_plane = fit_falx_plane(falx_img, verbose=False)
-            A, B, C, D = falx_plane['A'], falx_plane['B'], falx_plane['C'], falx_plane['D']
-            
-            # 計算每個點到 Falx 平面的有向距離
-            # 距離 = (Ax + By + Cz + D) / sqrt(A^2 + B^2 + C^2)
-            # 正值表示在法向量指向的一側（右側），負值表示在另一側（左側）
-            norm = np.sqrt(A**2 + B**2 + C**2)
-            
-            left_distances = (A * left_points[:, 0] + B * left_points[:, 1] + 
-                            C * left_points[:, 2] + D) / norm
-            right_distances = (A * right_points[:, 0] + B * right_points[:, 1] + 
-                             C * right_points[:, 2] + D) / norm
-            
-            # 左腦室應該在左側（負距離），右腦室應該在右側（正距離）
-            left_points_filtered = left_points[left_distances < 0]
-            right_points_filtered = right_points[right_distances > 0]
-            
-            left_points = left_points_filtered
-            right_points = right_points_filtered
-            
-            if verbose:
-                print(f"  使用 Falx 平面作為中線")
-                print(f"  左腦室點數 (過濾跨線點後): {len(left_points)}")
-                print(f"  右腦室點數 (過濾跨線點後): {len(right_points)}")
-        except Exception as e:
-            if verbose:
-                print(f"  ⚠️ Falx 平面擬合失敗: {e}，使用中位數方法")
-            # Fallback to median method
-            all_points = np.vstack([left_points, right_points])
-            midline_x = np.median(all_points[:, 0])
-            left_points = left_points[left_points[:, 0] < midline_x]
-            right_points = right_points[right_points[:, 0] > midline_x]
-            if verbose:
-                print(f"  中線 X 座標: {midline_x:.2f} mm")
-                print(f"  左腦室點數 (過濾跨線點後): {len(left_points)}")
-                print(f"  右腦室點數 (過濾跨線點後): {len(right_points)}")
-    else:
-        # 沒有 Falx 影像時，使用中位數方法
-        all_points = np.vstack([left_points, right_points])
-        midline_x = np.median(all_points[:, 0])
-        left_points = left_points[left_points[:, 0] < midline_x]
-        right_points = right_points[right_points[:, 0] > midline_x]
-        if verbose:
-            print(f"  使用中位數方法 (無 Falx)")
-            print(f"  中線 X 座標: {midline_x:.2f} mm")
-            print(f"  左腦室點數 (過濾跨線點後): {len(left_points)}")
-            print(f"  右腦室點數 (過濾跨線點後): {len(right_points)}")
+    # Step 1.5: 使用 Falx 平面過濾跨越中線的錯誤標記點
+    falx_plane = fit_falx_plane(falx_img, verbose=False)
+    A, B, C, D = falx_plane['A'], falx_plane['B'], falx_plane['C'], falx_plane['D']
+    
+    # 計算每個點到 Falx 平面的有向距離
+    # 距離 = (Ax + By + Cz + D) / sqrt(A^2 + B^2 + C^2)
+    # 正值表示在法向量指向的一側（右側），負值表示在另一側（左側）
+    norm = np.sqrt(A**2 + B**2 + C**2)
+    
+    left_distances = (A * left_points[:, 0] + B * left_points[:, 1] + 
+                    C * left_points[:, 2] + D) / norm
+    right_distances = (A * right_points[:, 0] + B * right_points[:, 1] + 
+                     C * right_points[:, 2] + D) / norm
+    
+    # 左腦室應該在左側（負距離），右腦室應該在右側（正距離）
+    left_points = left_points[left_distances < 0]
+    right_points = right_points[right_distances > 0]
+    
+    if verbose:
+        print(f"  使用 Falx 平面作為中線")
+        print(f"  左腦室點數 (過濾跨線點後): {len(left_points)}")
+        print(f"  右腦室點數 (過濾跨線點後): {len(right_points)}")
     
     # Step 2: 分別對左右腦室計算 (包含獨立的 Z 軸範圍篩選)
     def calculate_single_ventricle_diameter(points, name):
@@ -219,13 +193,14 @@ def calculate_ventricle_ap_diameter(left_vent, right_vent, falx_img=None, z_rang
     }
 
 
-def calculate_skull_ap_diameter(original_img, z_range, verbose=True):
+def calculate_skull_ap_diameter(original_img, z_range, falx_plane, verbose=True):
     """
-    計算顱骨內前後徑 (在指定 Z 範圍內的 Y 軸最大距離)
+    計算顱骨內前後徑 (在 Falx 平面上的 Y 軸最大距離)
     
     Args:
         original_img: 原始腦部影像物件
         z_range: (z_min, z_max) Z 軸範圍
+        falx_plane: Falx 平面參數 (必要)
         verbose: 是否顯示計算過程
     
     Returns:
@@ -237,7 +212,10 @@ def calculate_skull_ap_diameter(original_img, z_range, verbose=True):
         }
     """
     if verbose:
-        print("計算顱骨內前後徑 (Y 軸最大距離)...")
+        print("計算顱骨內前後徑 (在 Falx 平面上測量)...")
+    
+    if falx_plane is None:
+        raise ValueError("必須提供 Falx 平面參數以確保在中線上測量顱內前後徑!")
     
     # Step 1: 取得原始影像非零點
     data = get_image_data(original_img)
@@ -261,7 +239,28 @@ def calculate_skull_ap_diameter(original_img, z_range, verbose=True):
     if len(filtered_points) == 0:
         raise ValueError("Z 軸範圍內沒有點!")
     
-    # Step 4: 計算 Y 軸最大距離
+    # Step 4: 篩選接近 Falx 平面的點
+    A, B, C, D = falx_plane['A'], falx_plane['B'], falx_plane['C'], falx_plane['D']
+    norm = np.sqrt(A**2 + B**2 + C**2)
+    
+    # 計算每個點到 Falx 平面的距離
+    distances = np.abs(A * filtered_points[:, 0] + 
+                      B * filtered_points[:, 1] + 
+                      C * filtered_points[:, 2] + D) / norm
+    
+    # 只保留距離 Falx 平面很近的點 (±3mm 以內)
+    distance_threshold = 3.0  # mm
+    near_falx_mask = distances <= distance_threshold
+    filtered_points = filtered_points[near_falx_mask]
+    
+    if verbose:
+        print(f"  使用 Falx 平面作為中線 (±{distance_threshold}mm)")
+        print(f"  接近 Falx 平面的點數: {len(filtered_points)}")
+    
+    if len(filtered_points) == 0:
+        raise ValueError(f"在 Falx 平面 ±{distance_threshold}mm 範圍內沒有點!")
+    
+    # Step 5: 計算 Y 軸最大距離
     y_min_idx = np.argmin(filtered_points[:, 1])
     y_max_idx = np.argmax(filtered_points[:, 1])
     
@@ -269,7 +268,7 @@ def calculate_skull_ap_diameter(original_img, z_range, verbose=True):
     y_max = filtered_points[y_max_idx, 1]
     diameter = y_max - y_min
     
-    # Step 5: 取得前後端點座標
+    # Step 6: 取得前後端點座標
     anterior_point = filtered_points[y_max_idx]  # Y 最大 = 最前方
     posterior_point = filtered_points[y_min_idx]  # Y 最小 = 最後方
     
@@ -286,7 +285,7 @@ def calculate_skull_ap_diameter(original_img, z_range, verbose=True):
     }
 
 
-def calculate_alvi(left_vent, right_vent, original_img, falx_img=None, verbose=True):
+def calculate_alvi(left_vent, right_vent, original_img, falx_img, verbose=True):
     """
     計算 ALVI (Anteroposterior Lateral Ventricle Index)
     
@@ -298,7 +297,7 @@ def calculate_alvi(left_vent, right_vent, original_img, falx_img=None, verbose=T
         left_vent: 左腦室影像物件 (已拉正到 RAS+)
         right_vent: 右腦室影像物件 (已拉正到 RAS+)
         original_img: 原始腦部影像物件 (已拉正到 RAS+)
-        falx_img: Falx 影像 (用於定義中線過濾，可選)
+        falx_img: Falx 影像 (必要,用於定義中線和測量顱內徑)
         verbose: 是否顯示計算過程
     
     Returns:
@@ -320,6 +319,12 @@ def calculate_alvi(left_vent, right_vent, original_img, falx_img=None, verbose=T
         print("開始計算 ALVI (Anteroposterior Lateral Ventricle Index)")
         print("=" * 70)
     
+    # 0. 擬合 Falx 平面 (必要)
+    if falx_img is None:
+        raise ValueError("必須提供 Falx 影像以計算 ALVI!")
+    
+    falx_plane = fit_falx_plane(falx_img, verbose=verbose)
+    
     # 1. 計算腦室前後徑 (PCA 方法)
     vent_result = calculate_ventricle_ap_diameter(left_vent, right_vent, falx_img=falx_img, verbose=verbose)
     ventricle_ap = vent_result['diameter_mm']
@@ -328,8 +333,8 @@ def calculate_alvi(left_vent, right_vent, original_img, falx_img=None, verbose=T
     if verbose:
         print("\n" + "-" * 70)
     
-    # 2. 計算顱骨內前後徑 (在相同 Z 範圍)
-    skull_result = calculate_skull_ap_diameter(original_img, z_range, verbose=verbose)
+    # 2. 計算顱骨內前後徑 (在相同 Z 範圍,使用 Falx 平面)
+    skull_result = calculate_skull_ap_diameter(original_img, z_range, falx_plane=falx_plane, verbose=verbose)
     skull_ap = skull_result['diameter_mm']
     
     # 3. 計算 ALVI

@@ -394,11 +394,12 @@ def process_case_alvi(data_dir, output_image_path, show_plot=False, verbose=True
         dict: 包含所有測量結果的字典
     """
     try:
-        # 使用統一的檔案路徑查找函數
-        files = find_case_files(data_dir, require_original=True, require_falx=False)
+        # 使用統一的檔案路徑查找函數 (需要 Falx)
+        files = find_case_files(data_dir, require_original=True, require_falx=True)
         left_path = files['left_path']
         right_path = files['right_path']
         original_path = files['original_path']
+        falx_path = files['falx_path']
 
         # 載入腦室影像（自動拉正到 RAS+ 方向）
         left_vent, right_vent = load_ventricle_pair(
@@ -408,9 +409,14 @@ def process_case_alvi(data_dir, output_image_path, show_plot=False, verbose=True
         # 載入原始影像（自動拉正到 RAS+ 方向）
         original_img = load_original_image(str(original_path), verbose=verbose)
 
+        # 載入 Falx 影像
+        from model.calculation import load_falx_image
+        falx_img = load_falx_image(str(falx_path), verbose=verbose)
+
         # 計算 ALVI
         alvi_data = calculate_alvi(
             left_vent, right_vent, original_img,
+            falx_img=falx_img,
             verbose=verbose
         )
 
