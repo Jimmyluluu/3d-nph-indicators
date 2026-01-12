@@ -7,6 +7,7 @@ ALVI (Anteroposterior Lateral Ventricle Index) 計算模組
 import numpy as np
 from scipy.ndimage import label
 from model.image_processing import get_image_data, convert_voxel_to_physical
+from model.calculation import fit_falx_plane
 
 
 def get_largest_connected_component(data):
@@ -30,7 +31,7 @@ def get_largest_connected_component(data):
     return cleaned_data
 
 
-def calculate_ventricle_ap_diameter(left_vent, right_vent, z_range_percent=(0.3, 0.7), verbose=True):
+def calculate_ventricle_ap_diameter(left_vent, right_vent, falx_img=None, z_range_percent=(0.3, 0.7), verbose=True):
     """
     計算腦室體部的前後徑 (使用 PCA 方法)
     
@@ -39,6 +40,7 @@ def calculate_ventricle_ap_diameter(left_vent, right_vent, z_range_percent=(0.3,
     Args:
         left_vent: 左腦室影像物件
         right_vent: 右腦室影像物件
+        falx_img: Falx 影像物件 (用於定義中線，可選)
         z_range_percent: Z 軸篩選範圍 (預設 30%-70% 為體部)
         verbose: 是否顯示計算過程
     
@@ -70,6 +72,58 @@ def calculate_ventricle_ap_diameter(left_vent, right_vent, z_range_percent=(0.3,
     if verbose:
         print(f"  左腦室點數 (去噪後): {len(left_points)}")
         print(f"  右腦室點數 (去噪後): {len(right_points)}")
+    
+    # Step 1.5: 過濾跨越中線的錯誤標記點
+    if falx_img is not None:
+        # 使用 Falx 平面作為中線
+        try:
+            falx_plane = fit_falx_plane(falx_img, verbose=False)
+            A, B, C, D = falx_plane['A'], falx_plane['B'], falx_plane['C'], falx_plane['D']
+            
+            # 計算每個點到 Falx 平面的有向距離
+            # 距離 = (Ax + By + Cz + D) / sqrt(A^2 + B^2 + C^2)
+            # 正值表示在法向量指向的一側（右側），負值表示在另一側（左側）
+            norm = np.sqrt(A**2 + B**2 + C**2)
+            
+            left_distances = (A * left_points[:, 0] + B * left_points[:, 1] + 
+                            C * left_points[:, 2] + D) / norm
+            right_distances = (A * right_points[:, 0] + B * right_points[:, 1] + 
+                             C * right_points[:, 2] + D) / norm
+            
+            # 左腦室應該在左側（負距離），右腦室應該在右側（正距離）
+            left_points_filtered = left_points[left_distances < 0]
+            right_points_filtered = right_points[right_distances > 0]
+            
+            left_points = left_points_filtered
+            right_points = right_points_filtered
+            
+            if verbose:
+                print(f"  使用 Falx 平面作為中線")
+                print(f"  左腦室點數 (過濾跨線點後): {len(left_points)}")
+                print(f"  右腦室點數 (過濾跨線點後): {len(right_points)}")
+        except Exception as e:
+            if verbose:
+                print(f"  ⚠️ Falx 平面擬合失敗: {e}，使用中位數方法")
+            # Fallback to median method
+            all_points = np.vstack([left_points, right_points])
+            midline_x = np.median(all_points[:, 0])
+            left_points = left_points[left_points[:, 0] < midline_x]
+            right_points = right_points[right_points[:, 0] > midline_x]
+            if verbose:
+                print(f"  中線 X 座標: {midline_x:.2f} mm")
+                print(f"  左腦室點數 (過濾跨線點後): {len(left_points)}")
+                print(f"  右腦室點數 (過濾跨線點後): {len(right_points)}")
+    else:
+        # 沒有 Falx 影像時，使用中位數方法
+        all_points = np.vstack([left_points, right_points])
+        midline_x = np.median(all_points[:, 0])
+        left_points = left_points[left_points[:, 0] < midline_x]
+        right_points = right_points[right_points[:, 0] > midline_x]
+        if verbose:
+            print(f"  使用中位數方法 (無 Falx)")
+            print(f"  中線 X 座標: {midline_x:.2f} mm")
+            print(f"  左腦室點數 (過濾跨線點後): {len(left_points)}")
+            print(f"  右腦室點數 (過濾跨線點後): {len(right_points)}")
     
     # Step 2: 分別對左右腦室計算 (包含獨立的 Z 軸範圍篩選)
     def calculate_single_ventricle_diameter(points, name):
@@ -244,7 +298,7 @@ def calculate_alvi(left_vent, right_vent, original_img, falx_img=None, verbose=T
         left_vent: 左腦室影像物件 (已拉正到 RAS+)
         right_vent: 右腦室影像物件 (已拉正到 RAS+)
         original_img: 原始腦部影像物件 (已拉正到 RAS+)
-        falx_img: Falx 影像 (目前未使用,保留以備未來擴展)
+        falx_img: Falx 影像 (用於定義中線過濾，可選)
         verbose: 是否顯示計算過程
     
     Returns:
@@ -267,7 +321,7 @@ def calculate_alvi(left_vent, right_vent, original_img, falx_img=None, verbose=T
         print("=" * 70)
     
     # 1. 計算腦室前後徑 (PCA 方法)
-    vent_result = calculate_ventricle_ap_diameter(left_vent, right_vent, verbose=verbose)
+    vent_result = calculate_ventricle_ap_diameter(left_vent, right_vent, falx_img=falx_img, verbose=verbose)
     ventricle_ap = vent_result['diameter_mm']
     z_range = vent_result['z_range']
     
