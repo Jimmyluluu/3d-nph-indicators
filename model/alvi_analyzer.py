@@ -248,17 +248,36 @@ def calculate_skull_ap_diameter(original_img, z_range, falx_plane, verbose=True)
                       B * filtered_points[:, 1] + 
                       C * filtered_points[:, 2] + D) / norm
     
-    # 只保留距離 Falx 平面很近的點 (±3mm 以內)
-    distance_threshold = 3.0  # mm
-    near_falx_mask = distances <= distance_threshold
-    filtered_points = filtered_points[near_falx_mask]
+    # 顯示距離分布 (debug)
+    if verbose:
+        print(f"  距離 Falx 平面的統計:")
+        print(f"    最小距離: {np.min(distances):.2f} mm")
+        print(f"    最大距離: {np.max(distances):.2f} mm")
+        print(f"    平均距離: {np.mean(distances):.2f} mm")
+        print(f"    中位數距離: {np.median(distances):.2f} mm")
+    
+    # 嘗試不同的距離閾值,從 3mm 開始,如果沒有點就逐步放寬到 5mm
+    distance_thresholds = [3.0, 5.0]
+    filtered_points_result = None
+    used_threshold = None
+    
+    for distance_threshold in distance_thresholds:
+        near_falx_mask = distances <= distance_threshold
+        temp_filtered = filtered_points[near_falx_mask]
+        
+        if len(temp_filtered) > 0:
+            filtered_points_result = temp_filtered
+            used_threshold = distance_threshold
+            break
+    
+    if filtered_points_result is None:
+        raise ValueError(f"即使放寬到 ±{distance_thresholds[-1]}mm,在 Falx 平面附近仍然沒有點!")
+    
+    filtered_points = filtered_points_result
     
     if verbose:
-        print(f"  使用 Falx 平面作為中線 (±{distance_threshold}mm)")
+        print(f"  使用 Falx 平面作為中線 (±{used_threshold}mm)")
         print(f"  接近 Falx 平面的點數: {len(filtered_points)}")
-    
-    if len(filtered_points) == 0:
-        raise ValueError(f"在 Falx 平面 ±{distance_threshold}mm 範圍內沒有點!")
     
     # Step 5: 計算 Y 軸最大距離
     y_min_idx = np.argmin(filtered_points[:, 1])
