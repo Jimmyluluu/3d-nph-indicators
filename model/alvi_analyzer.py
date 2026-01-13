@@ -7,7 +7,7 @@ ALVI (Anteroposterior Lateral Ventricle Index) 計算模組
 import numpy as np
 from scipy.ndimage import label
 from model.image_processing import get_image_data, convert_voxel_to_physical
-from model.calculation import fit_falx_plane
+from model.calculation import fit_falx_plane, filter_points_by_falx_side
 
 
 def get_largest_connected_component(data):
@@ -77,22 +77,12 @@ def calculate_ventricle_ap_diameter(left_vent, right_vent, falx_img, z_range_per
         print(f"  右腦室點數 (去噪後): {len(right_points)}")
     
     # Step 1.5: 使用 Falx 平面過濾跨越中線的錯誤標記點
+    # Step 1.5: 使用 Falx 平面過濾跨越中線的錯誤標記點
     falx_plane = fit_falx_plane(falx_img, verbose=False)
-    A, B, C, D = falx_plane['A'], falx_plane['B'], falx_plane['C'], falx_plane['D']
     
-    # 計算每個點到 Falx 平面的有向距離
-    # 距離 = (Ax + By + Cz + D) / sqrt(A^2 + B^2 + C^2)
-    # 正值表示在法向量指向的一側（右側），負值表示在另一側（左側）
-    norm = np.sqrt(A**2 + B**2 + C**2)
-    
-    left_distances = (A * left_points[:, 0] + B * left_points[:, 1] + 
-                    C * left_points[:, 2] + D) / norm
-    right_distances = (A * right_points[:, 0] + B * right_points[:, 1] + 
-                     C * right_points[:, 2] + D) / norm
-    
-    # 左腦室應該在左側（負距離），右腦室應該在右側（正距離）
-    left_points = left_points[left_distances < 0]
-    right_points = right_points[right_distances > 0]
+    # 使用共用函數過濾
+    left_points = filter_points_by_falx_side(left_points, falx_plane, 'left', verbose=False)
+    right_points = filter_points_by_falx_side(right_points, falx_plane, 'right', verbose=False)
     
     if verbose:
         print(f"  使用 Falx 平面作為中線")

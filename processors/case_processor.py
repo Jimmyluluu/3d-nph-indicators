@@ -9,11 +9,13 @@ from model.calculation import (
     load_ventricle_pair,
     load_original_image,
     calculate_centroid_distance,
-    calculate_cranial_width,
     calculate_ventricle_to_cranial_ratio,
-    calculate_3d_evan_index,
     calculate_surface_area,
     calculate_volume_surface_ratio
+)
+from model.evan_analyzer import (
+    calculate_3d_evan_index,
+    calculate_cranial_width
 )
 from model.alvi_analyzer import calculate_alvi
 from model.visualization import (
