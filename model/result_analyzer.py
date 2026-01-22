@@ -52,19 +52,22 @@ INDICATOR_CONFIGS = {
     'surface_area': {
         'name': 'Surface Area',
         'full_name': 'Ventricle Surface Area',
-        'pattern': r'\| ([^\|]+) \| ([\d.]+) \| ([\d.]+) \| ([\d.]+) \| [\d.]+s \|',
-        'fields': ['case_id', 'left_area', 'right_area', 'total_area'],
-        'primary_field': 'total_area',
+        # 從合併表格提取：| 案例 ID | 左體積 | 右體積 | 總體積 | V/SA比例 | 時間 |
+        # 注意：表面積需要從體積和比例反推，這裡暫時使用體積資料
+        'pattern': r'\| ([^\|]+) \| ([\d.]+) \| ([\d.]+) \| ([\d.]+) \| ([\d.]+) \| [\d.]+s \|',
+        'fields': ['case_id', 'left_volume', 'right_volume', 'total_volume', 'ratio'],
+        'primary_field': 'total_volume',  # 暫時使用總體積作為主要欄位
         'threshold': None,
         'outlier_threshold': None,
-        'unit': 'mm²',
+        'unit': 'mm³',  # 實際上是體積單位
         'report_title': '腦室表面積分析報告',
     },
     'ventricle_volume': {
         'name': 'Volume',
         'full_name': 'Ventricle Volume',
-        'pattern': r'\| ([^\|]+) \| ([\d.]+) \| ([\d.]+) \| ([\d.]+) \| [\d.]+s \|',
-        'fields': ['case_id', 'left_volume', 'right_volume', 'total_volume'],
+        # 從合併表格提取：| 案例 ID | 左體積 | 右體積 | 總體積 | V/SA比例 | 時間 |
+        'pattern': r'\| ([^\|]+) \| ([\d.]+) \| ([\d.]+) \| ([\d.]+) \| ([\d.]+) \| [\d.]+s \|',
+        'fields': ['case_id', 'left_volume', 'right_volume', 'total_volume', 'ratio'],
         'primary_field': 'total_volume',
         'threshold': None,
         'outlier_threshold': None,
