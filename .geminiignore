@@ -1,0 +1,35 @@
+# 排除大型結果資料夾 (17GB+)
+result/
+nph-result/
+vol-surf-result/
+
+# 排除虛擬環境
+env/
+venv/
+.venv/
+.env/
+
+# 排除 Git
+.git/
+
+# 排除 Python 快取
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 排除大型二進位檔案
+*.html
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.nii
+*.nii.gz
+*.log
+
+# 排除資料夾
+data/
+output/
+logs/
+r
