@@ -7,7 +7,7 @@ ALVI (Anteroposterior Lateral Ventricle Index) 計算模組
 import numpy as np
 from scipy.ndimage import label
 from model.image_processing import get_image_data, convert_voxel_to_physical
-from model.calculation import fit_falx_plane, filter_points_by_falx_side
+from model.calculation import fit_falx_plane, filter_points_by_falx_side, project_points_to_plane, find_max_diameter_convex_hull
 
 
 def get_largest_connected_component(data):
@@ -33,65 +33,49 @@ def get_largest_connected_component(data):
 
 def calculate_ventricle_ap_diameter(left_vent, right_vent, falx_img, z_range_percent=(0.3, 0.7), verbose=True):
     """
-    計算腦室體部的前後徑 (使用 PCA 方法)
+    計算腦室體部的前後徑 (使用 Falx 平面投影 + Convex Hull 方法)
     
-    分別計算左右腦室的長徑,然後取最大值 (代表最嚴重的擴大程度)
+    分別計算左右腦室在平行於 Falx 平面上的最長徑，然後取最大值。
     
     Args:
         left_vent: 左腦室影像物件
         right_vent: 右腦室影像物件
-        falx_img: Falx 影像物件 (必要,用於定義中線)
+        falx_img: Falx 影像物件 (必要,用於定義中線和投影平面)
         z_range_percent: Z 軸篩選範圍 (預設 30%-70% 為體部)
         verbose: 是否顯示計算過程
     
     Returns:
-        dict: {
-            'diameter_mm': float,           # 最大前後徑 (mm)
-            'left_diameter_mm': float,      # 左腦室前後徑
-            'right_diameter_mm': float,     # 右腦室前後徑
-            'anterior_point': tuple,        # 前端點座標
-            'posterior_point': tuple,       # 後端點座標
-            'z_range': tuple,               # 使用的 Z 軸範圍 (最大側的範圍)
-            'body_points_count': int        # 體部總點數
-        }
+        dict: 前後徑計算結果
     """
     if verbose:
-        print("計算腦室前後徑 (PCA 方法 - 取左右最大值)...")
+        print("計算腦室前後徑 (Falx 投影 + Convex Hull - 取左右最大值)...")
     
     if falx_img is None:
         raise ValueError("必須提供 Falx 影像以計算腦室前後徑!")
     
-    # Step 1: 取得左右腦室非零點 (先進行連通區域過濾，去除非主體的噪聲島)
-    left_data_raw = get_image_data(left_vent)
-    left_data = get_largest_connected_component(left_data_raw)
-    left_coords = np.argwhere(left_data > 0)
-    left_points = convert_voxel_to_physical(left_coords, left_vent.affine)
-    
-    right_data_raw = get_image_data(right_vent)
-    right_data = get_largest_connected_component(right_data_raw)
-    right_coords = np.argwhere(right_data > 0)
-    right_points = convert_voxel_to_physical(right_coords, right_vent.affine)
-    
-    if verbose:
-        print(f"  左腦室點數 (去噪後): {len(left_points)}")
-        print(f"  右腦室點數 (去噪後): {len(right_points)}")
-    
-    # Step 1.5: 使用 Falx 平面過濾跨越中線的錯誤標記點
-    # Step 1.5: 使用 Falx 平面過濾跨越中線的錯誤標記點
+    # Step 1: 取得 Falx 平面
     falx_plane = fit_falx_plane(falx_img, verbose=False)
     
-    # 使用共用函數過濾
-    left_points = filter_points_by_falx_side(left_points, falx_plane, 'left', verbose=False)
-    right_points = filter_points_by_falx_side(right_points, falx_plane, 'right', verbose=False)
+    # Step 2: 取得左右腦室點雲並進行基本過濾
+    def get_and_filter_ventricle_points(vent_img, side):
+        data_raw = get_image_data(vent_img)
+        data = get_largest_connected_component(data_raw)
+        coords = np.argwhere(data > 0)
+        points = convert_voxel_to_physical(coords, vent_img.affine)
+        # 過濾跨越中線的點
+        points = filter_points_by_falx_side(points, falx_plane, side, verbose=False)
+        return points
+
+    left_points = get_and_filter_ventricle_points(left_vent, 'left')
+    right_points = get_and_filter_ventricle_points(right_vent, 'right')
     
     if verbose:
-        print(f"  使用 Falx 平面作為中線")
-        print(f"  左腦室點數 (過濾跨線點後): {len(left_points)}")
-        print(f"  右腦室點數 (過濾跨線點後): {len(right_points)}")
+        print(f"  左腦室點數 (去噪過濾後): {len(left_points)}")
+        print(f"  右腦室點數 (去噪過濾後): {len(right_points)}")
     
-    # Step 2: 分別對左右腦室計算 (包含獨立的 Z 軸範圍篩選)
+    # Step 3: 定義單側計算邏輯 (投影 -> 過濾異常 -> Convex Hull)
     def calculate_single_ventricle_diameter(points, name):
-        """計算單側腦室的長徑 (獨立計算 Z 軸範圍)"""
+        """計算單側腦室的投影最長徑"""
         if len(points) == 0:
              return {
                 'diameter': 0.0,
@@ -101,54 +85,50 @@ def calculate_ventricle_ap_diameter(left_vent, right_vent, falx_img, z_range_per
                 'z_range': (0,0)
             }
 
-        # 該側的 Z 軸範圍
+        # 1. 篩選 Z 軸體部範圍
         z_p30 = np.percentile(points[:, 2], z_range_percent[0] * 100)
         z_p70 = np.percentile(points[:, 2], z_range_percent[1] * 100)
-        
-        # 篩選體部
         body_mask = (points[:, 2] >= z_p30) & (points[:, 2] <= z_p70)
         body_points = points[body_mask]
         
-        if len(body_points) == 0:
-            if verbose: print(f"  ⚠️ {name} 篩選體部後沒有點")
+        if len(body_points) < 10: # 點數太少無法計算
+            if verbose: print(f"  ⚠️ {name} 篩選體部後點數不足 ({len(body_points)})")
             return {
-                'diameter': 0.0,
-                'anterior': (0,0,0),
-                'posterior': (0,0,0),
-                'body_count': 0,
-                'z_range': (z_p30, z_p70)
+                'diameter': 0.0, 'anterior': (0,0,0), 'posterior': (0,0,0),
+                'body_count': len(body_points), 'z_range': (z_p30, z_p70)
             }
         
-        # PCA - 使用 SVD 找主軸方向
-        centroid = np.mean(body_points, axis=0)
-        centered = body_points - centroid
+        # 2. 投影到 Falx 平面 (從側面壓扁)
+        projected_points = project_points_to_plane(body_points, falx_plane)
+        
+        # 3. 排除異常點 (基於投影後的長軸方向)
+        # 利用 PCA 找出投影點的分佈主軸以便進行百分位數過濾
+        centroid = np.mean(projected_points, axis=0)
+        centered = projected_points - centroid
         _, _, Vt = np.linalg.svd(centered, full_matrices=False)
-        principal_axis = Vt[0]  # 第一主成分 = 腦室長軸方向
+        principal_axis = Vt[0] # 投影平面內的最長軸
         
-        # 投影到主軸
-        projections = centered @ principal_axis
+        proj_1d = centered @ principal_axis
+        p_min_val = np.percentile(proj_1d, 0.5)
+        p_max_val = np.percentile(proj_1d, 99.5)
         
-        # 排除異常點: 使用百分位數 (0.5% - 99.5%)
-        # 這可以去除分割結果中某些遠離本體的噪聲點 (例如單個像素誤差)
-        p_min_val = np.percentile(projections, 0.5)
-        p_max_val = np.percentile(projections, 99.5)
+        # 只保留中間 99% 的點
+        outlier_mask = (proj_1d >= p_min_val) & (proj_1d <= p_max_val)
+        filtered_points = projected_points[outlier_mask]
         
-        # 計算長徑 (基於去噪後的範圍, 但為了避免過度縮短, 若去噪後差距過大可考慮用 0-100%)
-        # 既然用戶明確要求去掉 "明顯有問題的點", 99% 的信賴區間是合理的
-        diameter = p_max_val - p_min_val
+        # 4. 使用 Convex Hull 找出過濾後點集的最長徑
+        diameter, p1, p2 = find_max_diameter_convex_hull(filtered_points)
         
-        # 找前後端點座標 (最接近 percentile 的實際點)
-        # 用 argmin 找絕對差最小的索引
-        anterior_idx = np.argmin(np.abs(projections - p_max_val))
-        posterior_idx = np.argmin(np.abs(projections - p_min_val))
-        
-        anterior_point = body_points[anterior_idx]
-        posterior_point = body_points[posterior_idx]
+        # 5. 定義前後端點 (Y 座標較大者為 Anterior, RAS+ 方向)
+        if p1[1] > p2[1]:
+            ant_pt, post_pt = p1, p2
+        else:
+            ant_pt, post_pt = p2, p1
         
         return {
             'diameter': diameter,
-            'anterior': anterior_point,
-            'posterior': posterior_point,
+            'anterior': ant_pt,
+            'posterior': post_pt,
             'body_count': len(body_points),
             'z_range': (z_p30, z_p70)
         }

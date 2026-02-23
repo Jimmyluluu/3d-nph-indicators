@@ -303,3 +303,91 @@ def filter_points_by_falx_side(points, falx_plane, side, verbose=True):
         print(f"  {side}側 Falx 過濾: {len(points)} -> {len(filtered_points)} 點 (移除 {len(points) - len(filtered_points)} 點)")
         
     return filtered_points
+
+
+def project_points_to_plane(points, plane_params):
+    """
+    將 3D 點投影到平面上 (從側面壓扁)
+    
+    Args:
+        points: (N, 3) 點雲座標 (物理空間)
+        plane_params: 平面參數，包含 'A', 'B', 'C', 'D' 和 'normal'
+        
+    Returns:
+        np.array: (N, 3) 投影後的物理座標
+    """
+    if len(points) == 0:
+        return points
+        
+    A, B, C, D = plane_params['A'], plane_params['B'], plane_params['C'], plane_params['D']
+    normal = plane_params['normal']
+    norm_sq = A**2 + B**2 + C**2
+    
+    # 計算點到平面的距離 (帶正負)
+    # distance = (Ax + By + Cz + D) / sqrt(A^2 + B^2 + C^2)
+    distances = (A * points[:, 0] + B * points[:, 1] + C * points[:, 2] + D) / np.sqrt(norm_sq)
+    
+    # 投影點 P' = P - distance * unit_normal
+    unit_normal = normal / np.sqrt(norm_sq)
+    projected_points = points - np.outer(distances, unit_normal)
+    
+    return projected_points
+
+
+def find_max_diameter_convex_hull(points):
+    """
+    使用 Convex Hull 找出 3D 點集中的最長徑 (假設點集已在同一平面上)
+    
+    Args:
+        points: (N, 3) 點雲座標
+        
+    Returns:
+        tuple: (max_diameter, point1, point2)
+    """
+    if len(points) < 2:
+        return 0.0, None, None
+        
+    from scipy.spatial import ConvexHull
+    from scipy.spatial.distance import pdist, squareform
+    
+    if len(points) == 2:
+        dist = np.linalg.norm(points[0] - points[1])
+        return dist, points[0], points[1]
+        
+    # 1. 投影到 2D 平面 (使用 SVD 自動找平面基底)
+    # 取中心化
+    centroid = np.mean(points, axis=0)
+    centered = points - centroid
+    
+    # SVD: points = U S Vt
+    # 如果點共面，Vt 前兩行就是平面內的主軸
+    _, _, Vt = np.linalg.svd(centered, full_matrices=False)
+    
+    # 轉換為 2D 座標 (投影到前兩個主軸)
+    points_2d = centered @ Vt[:2].T # (N, 2)
+    
+    try:
+        # 2. 計算凸包
+        hull = ConvexHull(points_2d)
+        hull_points_2d = points_2d[hull.vertices]
+        hull_points_3d = points[hull.vertices]
+        
+        # 3. 在凸包頂點中找出最遠點對
+        dists = pdist(hull_points_2d)
+        if len(dists) == 0:
+            return 0.0, None, None
+            
+        dist_matrix = squareform(dists)
+        i, j = np.unravel_index(np.argmax(dist_matrix), dist_matrix.shape)
+        
+        max_diameter = dist_matrix[i, j]
+        return max_diameter, hull_points_3d[i], hull_points_3d[j]
+        
+    except Exception:
+        # 如果 Convex Hull 失敗 (例如所有點共線)，退回到暴力法
+        dists = pdist(points)
+        if len(dists) == 0:
+            return 0.0, None, None
+        dist_matrix = squareform(dists)
+        i, j = np.unravel_index(np.argmax(dist_matrix), dist_matrix.shape)
+        return dist_matrix[i, j], points[i], points[j]
