@@ -11,23 +11,28 @@
 
 ```
 3d-nph-indicators/
-├── main.py                      # 統一 CLI 入口
+├── main.py                      # 統一 CLI 入口（5 種指標類型）
 │
 ├── processors/                  # 處理流程邏輯
 │   ├── logger.py               # 日誌記錄
-│   ├── case_processor.py       # 單案例處理
+│   ├── printers.py             # 計算結果輸出（print 相關）
+│   ├── case_processor.py       # 單案例處理（5 種指標）
 │   └── batch_processor.py      # 批次處理
 │
 └── model/                       # 純計算和視覺化模組
-    ├── calculation.py          # 計算邏輯(含統一載入函數)
+    ├── calculation.py          # 基礎計算（含統一載入函數、Falx 工具函數）
+    ├── cal_volume_surface.py   # 體積與表面積計算
+    ├── alvi_analyzer.py        # ALVI 計算模組
+    ├── evan_analyzer.py        # 3D Evan Index 計算模組
+    ├── result_analyzer.py      # 批次結果分析（統計、ROC 曲線）
     ├── visualization.py        # 3D 視覺化
-    ├── image_processing.py
+    ├── image_processing.py     # 影像處理工具
     └── report_generator.py    # 報表產生
 ```
 
 **職責劃分:**
 - `model/` - 純計算、視覺化、報表邏輯 (不含處理流程)
-- `processors/` - 處理流程、日誌、協調邏輯
+- `processors/` - 處理流程、日誌、print 輸出、協調邏輯
 - `main.py` - CLI 入口
 
 ---
@@ -178,7 +183,13 @@ def process_case_new_metric(data_dir, output_image_path,
 if indicator_type == "centroid_ratio":
     process_func = process_case_indicator_ratio
 elif indicator_type == "evan_index":
-    process_func = ...
+    process_func = process_case_evan_index
+elif indicator_type == "surface_area":
+    process_func = process_case_surface_area
+elif indicator_type == "volume_surface_ratio":
+    process_func = process_case_volume_surface_ratio
+elif indicator_type == "alvi":
+    process_func = process_case_alvi
 elif indicator_type == "new_metric":  # ✅ 新增
     process_func = process_case_new_metric
 ```
@@ -190,7 +201,7 @@ elif indicator_type == "new_metric":  # ✅ 新增
 ```python
 parser.add_argument(
     '--type', '-t',
-    choices=['centroid_ratio', 'evan_index', 'new_metric'],  # ✅ 新增
+    choices=['centroid_ratio', 'evan_index', 'surface_area', 'volume_surface_ratio', 'alvi', 'new_metric'],  # ✅ 新增
     default='centroid_ratio',
     help='指標類型'
 )
@@ -241,45 +252,88 @@ model/visualization.py   # 純視覺化函數
 
 ```
 model/calculation.py
-  ├── load_ventricle_pair()    ✅ 載入腦室 (會自動拉正)
-  ├── load_original_image()    ✅ 載入原始影像 (會自動拉正)
-  └── calculate_*()            計算函數
+  ├── load_ventricle_pair()       ✅ 載入腦室 (會自動拉正)
+  ├── load_original_image()       ✅ 載入原始影像 (會自動拉正)
+  ├── load_falx_image()           ✅ 載入 Falx mask (會自動拉正)
+  ├── fit_falx_plane()            ✅ 擬合 Falx 平面 (SVD)
+  ├── filter_points_by_falx_side() 依 Falx 平面過濾點雲
+  ├── project_points_to_plane()   投影點雲到平面
+  ├── find_max_diameter_convex_hull() Convex Hull 最長徑
+  ├── calculate_centroid_3d()     計算 3D 質心
+  ├── calculate_centroid_distance() 計算質心距離
+  └── calculate_ventricle_to_cranial_ratio() 計算比值
+
+model/cal_volume_surface.py
+  ├── calculate_surface_area()    計算腦室表面積
+  ├── calculate_volume_smooth()   Marching Cubes 平滑體積
+  └── calculate_volume_surface_ratio() 體積/表面積比例
+
+model/alvi_analyzer.py
+  ├── calculate_ventricle_ap_diameter() 腦室前後徑 (Falx 投影)
+  ├── calculate_skull_ap_diameter()    顱骨前後徑
+  └── calculate_alvi()                 ALVI 計算
+
+model/evan_analyzer.py
+  ├── calculate_anterior_horn_distance_with_falx() 前腳距離 (Falx 方法)
+  ├── calculate_anterior_horn_max_distance()       前腳距離 (質心方法)
+  ├── calculate_cranial_width()                    顱內橫向寬度
+  └── calculate_3d_evan_index()                    3D Evan Index
+
+model/result_analyzer.py
+  ├── INDICATOR_CONFIGS           ✅ 指標配置字典（含 evan_index/alvi/volume_surface_ratio/ventricle_volume）
+  ├── BaseResultAnalyzer          通用結果分析器基礎類別
+  │   ├── load_data()             載入結果摘要
+  │   ├── get_statistics()        統計數據
+  │   ├── evaluate_threshold()    評估診斷閾值
+  │   ├── generate_roc_curve()    生成 ROC 曲線
+  │   └── generate_report()       生成分析報告
+  └── create_analyzer()           工廠函數
 
 model/visualization.py
-  └── visualize_*()            視覺化函數 (接受影像物件)
+  └── visualize_*()               視覺化函數 (接受影像物件)
 
 model/report_generator.py
-  ├── INDICATOR_CONFIGS        ✅ 指標配置字典
+  ├── INDICATOR_CONFIGS           ✅ 報表配置字典
   └── generate_markdown_report()  ✅ 統一報表產生
 
+model/image_processing.py
+  ├── reorient_image()            ⚠️ 不要直接用！透過 load_* 函數呼叫
+  ├── get_image_data()            ✅ 取得影像資料
+  ├── get_voxel_size()            ✅ 取得體素大小
+  ├── convert_voxel_to_physical() 體素座標轉物理座標
+  └── extract_surface_mesh()      ✅ Marching Cubes 表面提取
+
 processors/case_processor.py
-  ├── process_case_indicator_ratio()
-  └── process_case_evan_index()
+  ├── find_case_files()                    尋找案例檔案
+  ├── process_case_indicator_ratio()       質心距離比值
+  ├── process_case_evan_index()            3D Evan Index
+  ├── process_case_surface_area()          腦室表面積
+  ├── process_case_volume_surface_ratio()  體積/表面積比例
+  └── process_case_alvi()                  ALVI
 
 processors/batch_processor.py
   ├── scan_data_directory()
   └── batch_process()
 
-processors/logger.py
-  └── ProcessLogger            日誌記錄器
+processors/printers.py
+  └── print_*()                   所有 print 輸出函數（保持 model/ 純計算）
 
-model/image_processing.py
-  ├── reorient_image()         ⚠️ 不要直接用!透過 load_* 函數呼叫
-  ├── get_image_data()         ✅ 取得影像資料
-  └── get_voxel_size()         ✅ 取得體素大小
+processors/logger.py
+  └── ProcessLogger               日誌記錄器
 ```
 
 ---
 
 ## ✅ 開發新指標檢查清單
 
-- [ ] 在 `model/calculation.py` 新增計算函數
-- [ ] 在 `model/visualization.py` 新增視覺化函數(接受物件不接受路徑)
-- [ ] 在 `processors/case_processor.py` 新增處理函數
-- [ ] 使用 `load_ventricle_pair()` 和 `load_original_image()` 載入影像
+- [ ] 在 `model/` 新增計算模組（如 `model/xxx_analyzer.py`）或在 `model/calculation.py` 新增計算函數
+- [ ] 在 `model/visualization.py` 新增視覺化函數（接受物件不接受路徑）
+- [ ] 在 `processors/case_processor.py` 新增 `process_case_xxx()` 處理函數
+- [ ] 使用 `load_ventricle_pair()`、`load_original_image()`、`load_falx_image()` 載入影像
+- [ ] print 輸出邏輯放在 `processors/printers.py`，不放在 model/
 - [ ] 在 `processors/batch_processor.py` 新增支援
 - [ ] 在 `model/report_generator.py` 的 `INDICATOR_CONFIGS` 新增配置
-- [ ] 更新 `main.py` 的 CLI 參數
+- [ ] 更新 `main.py` 的 CLI 參數 choices
 
 ---
 
