@@ -285,8 +285,8 @@ class BaseResultAnalyzer:
                 
                 plt.scatter(fpr[idx], tpr[idx], s=150, zorder=5, edgecolors='white', linewidth=2)
                 plt.annotate(f'{thresh:.2f}\n(Sens:{tpr[idx]:.0%}, Spec:{1-fpr[idx]:.0%})', 
-                             xy=(fpr[idx], tpr[idx]), 
-                             xytext=(fpr[idx]+0.05, tpr[idx]-0.1),
+                             xy=(fpr[idx], tpr[idx]),  # type: ignore
+                             xytext=(fpr[idx]+0.05, tpr[idx]-0.1), # type: ignore
                              fontsize=10, fontweight='bold',
                              arrowprops=dict(arrowstyle='->', color='#64748b'))
         
