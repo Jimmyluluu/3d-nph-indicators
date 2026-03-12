@@ -1,0 +1,25 @@
+{
+    "files.watcherExclude": {
+        "**/result/**": true,
+        "**/nph-result/**": true,
+        "**/vol-surf-result/**": true,
+        "**/env/**": true,
+        "**/.git/**": true
+    },
+    "search.exclude": {
+        "**/result": true,
+        "**/nph-result": true,
+        "**/vol-surf-result": true,
+        "**/env": true
+    },
+    "python.analysis.exclude": [
+        "**/env/**",
+        "**/venv/**",
+        "**/.venv/**",
+        "**/result/**",
+        "**/nph-result/**",
+        "**/vol-surf-result/**"
+    ],
+    "python.analysis.extraPaths": [],
+    "python.analysis.autoSearchPaths": false
+}

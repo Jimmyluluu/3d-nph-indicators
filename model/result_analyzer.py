@@ -74,6 +74,25 @@ INDICATOR_CONFIGS = {
         'unit': 'mm³',
         'report_title': '腦室體積分析報告',
     },
+    'callosal_angle': {
+        'name': 'Callosal Angle',
+        'full_name': 'Callosal Angle',
+        # 從合併表格提取：| 案例 ID | 胼胝體角 (°) | 處理時間 |
+        # 範例：| data_1 | 115.2° | 1.25s |
+        'pattern': r'\| ([^\|]+) \| ([\d.]+)° \| [\d.]+s \|',
+        'fields': ['case_id', 'angle'],
+        'primary_field': 'angle',
+        # 文獻參考：正常 100–120°，iNPH 患者 50–80°
+        'threshold': 100.0,
+        'threshold_range': [70.0, 80.0, 90.0, 100.0, 110.0, 120.0],
+        'outlier_threshold': None,
+        'min_valid_value': 0.1,  # 過濾掉角度為 0 的無效結果
+        'unit': '°',
+        'report_title': 'Callosal Angle 分析報告',
+        'normal_range': (100.0, 120.0),  # 正常範圍（文獻）
+        'nph_range': (50.0, 80.0),       # iNPH 典型範圍（文獻）
+        'direction': 'down',             # 數值越小，越可能是 NPH
+    }
 }
 
 
@@ -140,6 +159,12 @@ class BaseResultAnalyzer:
                 self.abnormal_cases.append((case_id, primary_value))
                 continue
             
+            # 過濾過小（無效）的數值
+            min_valid = self.config.get('min_valid_value')
+            if min_valid is not None and primary_value < min_valid:
+                self.abnormal_cases.append((case_id, primary_value))
+                continue
+            
             # 分類 NPH / 非 NPH
             if '⚠️ NPH' in case_id:
                 clean_id = case_id.replace(' ⚠️ NPH', '')
@@ -185,16 +210,25 @@ class BaseResultAnalyzer:
         nph_vals = [x[1] for x in self.nph_values]
         non_nph_vals = [x[1] for x in self.non_nph_values]
         
-        nph_above = sum(1 for v in nph_vals if v >= threshold)
-        nph_below = self.n_nph - nph_above
-        non_above = sum(1 for v in non_nph_vals if v >= threshold)
-        non_below = self.n_non - non_above
+        direction = self.config.get('direction', 'up')
         
-        sens = nph_above / self.n_nph if self.n_nph else 0
-        spec = non_below / self.n_non if self.n_non else 0
-        ppv = nph_above / (nph_above + non_above) if (nph_above + non_above) > 0 else 0
-        npv = non_below / (non_below + nph_below) if (non_below + nph_below) > 0 else 0
-        acc = (nph_above + non_below) / (self.n_nph + self.n_non) if (self.n_nph + self.n_non) else 0
+        if direction == 'down':
+            # 越小越有病（例如 Callosal Angle <= 100）
+            nph_positive = sum(1 for v in nph_vals if v <= threshold)
+            non_positive = sum(1 for v in non_nph_vals if v <= threshold)
+        else:
+            # 越大越有病（預設，例如 ALVI >= 0.5）
+            nph_positive = sum(1 for v in nph_vals if v >= threshold)
+            non_positive = sum(1 for v in non_nph_vals if v >= threshold)
+            
+        nph_negative = self.n_nph - nph_positive
+        non_negative = self.n_non - non_positive
+        
+        sens = nph_positive / self.n_nph if self.n_nph else 0
+        spec = non_negative / self.n_non if self.n_non else 0
+        ppv = nph_positive / (nph_positive + non_positive) if (nph_positive + non_positive) > 0 else 0
+        npv = non_negative / (non_negative + nph_negative) if (non_negative + nph_negative) > 0 else 0
+        acc = (nph_positive + non_negative) / (self.n_nph + self.n_non) if (self.n_nph + self.n_non) else 0
         
         return {
             'threshold': threshold,
@@ -203,10 +237,10 @@ class BaseResultAnalyzer:
             'ppv': ppv,
             'npv': npv,
             'accuracy': acc,
-            'tp': nph_above,
-            'tn': non_below,
-            'fp': non_above,
-            'fn': nph_below
+            'tp': nph_positive,
+            'tn': non_negative,
+            'fp': non_positive,
+            'fn': nph_negative
         }
     
     def generate_roc_curve(self, output_path):
@@ -215,9 +249,23 @@ class BaseResultAnalyzer:
         y_true = [1] * self.n_nph + [0] * self.n_non
         y_scores = [x[1] for x in self.nph_values] + [x[1] for x in self.non_nph_values]
         
+        # 處理方向性：如果越小越有病（down），將分數取負再跑 ROC，
+        # 這樣 sklearn 才會把小的值當作預測機率較高 (positive)
+        direction = self.config.get('direction', 'up')
+        if direction == 'down':
+            y_scores_for_roc = [-s for s in y_scores]
+        else:
+            y_scores_for_roc = y_scores
+            
         # 計算 ROC
-        fpr, tpr, thresholds = roc_curve(y_true, y_scores)
+        fpr, tpr, thresholds_roc = roc_curve(y_true, y_scores_for_roc)
         roc_auc = auc(fpr, tpr)
+        
+        # 如果反轉了分數，把閾值還原成正的以利標示
+        if direction == 'down':
+            thresholds_actual = -thresholds_roc
+        else:
+            thresholds_actual = thresholds_roc
         
         # 繪製
         plt.figure(figsize=(10, 8))
@@ -233,7 +281,7 @@ class BaseResultAnalyzer:
             
             for thresh in key_thresholds:
                 # 找到最接近 threshold 的點
-                idx = (np.abs(thresholds - thresh)).argmin()
+                idx = (np.abs(thresholds_actual - thresh)).argmin()
                 
                 plt.scatter(fpr[idx], tpr[idx], s=150, zorder=5, edgecolors='white', linewidth=2)
                 plt.annotate(f'{thresh:.2f}\n(Sens:{tpr[idx]:.0%}, Spec:{1-fpr[idx]:.0%})', 

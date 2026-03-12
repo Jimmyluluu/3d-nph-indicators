@@ -1,6 +1,6 @@
 # NPH 診斷指標算法說明
 
-本文檔詳細說明用於正常壓力水腦症 (Normal Pressure Hydrocephalus, NPH) 診斷的兩個主要 3D 影像分析指標：**ALVI** 和 **Evan Index**。
+本文檔詳細說明用於正常壓力水腦症 (Normal Pressure Hydrocephalus, NPH) 診斷的 3D 影像分析指標：**ALVI**、**Evan Index**、**Callosal Angle** 與 **腦室體積**。
 
 ---
 
@@ -8,7 +8,9 @@
 
 1. [ALVI (Anteroposterior Lateral Ventricle Index)](#alvi-anteroposterior-lateral-ventricle-index)
 2. [Evan Index (3D)](#evan-index-3d)
-3. [共用計算模組](#共用計算模組)
+3. [Callosal Angle (胼胝體角)](#callosal-angle-胼胝體角)
+4. [腦室體積與表面積](#腦室體積與表面積-ventricle-volume--surface-area)
+5. [共用計算模組](#共用計算模組)
 
 ---
 
@@ -269,6 +271,289 @@ evan_index_percent = evan_index * 100
 
 ---
 
+## Callosal Angle (胼胝體角)
+
+### 定義
+
+胼胝體角是在**垂直於 AC-PC 軸的冠狀切面上，且切面通過後交叉 (Posterior Commissure, PC) 水平**，測量兩側腦室上緣所形成的夾角。
+
+- **正常範圍**: > 100°
+- **NPH 診斷閾值**: ≤ 100°（越小代表腦室受擠壓越嚴重）
+
+### 💡 白話文總結
+
+> **「在靠近後交叉 (PC) 位置的冠狀切面上，左右兩側腦室各自從底部往頂端拉一條線，測量兩條線的夾角。」**
+
+---
+
+### 算法流程
+
+```mermaid
+flowchart TD
+    A[載入影像] --> B[三腦室點雲\nIQR 離群值過濾]
+    B --> C[PC 近似錨點\n三腦室最後方 P5 均值]
+    B --> D[三腦室質心\nIQR 過濾後均值]
+    A --> E[Falx 平面 + 腦室 AP 向量]
+    C --> F[建立冠狀切面\n以 PC 錨點為通過點]
+    E --> F
+    F --> G[切取左右腦室截面\n厚度 ±2mm]
+    G --> H[左右各取最高點 top\n與最低點 bottom]
+    H --> I[各自延伸直線\n求 3D 最近交點作為頂點]
+    I --> J[向量 頂點→top\n點積求夾角]
+    D --> J
+```
+
+---
+
+### 1. 三腦室點雲清理（IQR 離群值過濾）
+
+**目的**: 去除標記錯誤的孤立 voxel，避免其拉偏後方錨點或質心。
+
+**方法**: 對 X/Y/Z 三軸**分別**用 IQR 方法過濾，取交集：
+
+$$\text{正常範圍} = [Q_1 - 1.5 \times \text{IQR},\ Q_3 + 1.5 \times \text{IQR}]$$
+
+- $Q_1$：第 25 百分位數
+- $Q_3$：第 75 百分位數
+- $\text{IQR} = Q_3 - Q_1$
+
+```python
+def remove_outliers_iqr(points, k=1.5):
+    mask = np.ones(len(points), dtype=bool)
+    for axis in range(3):
+        col = points[:, axis]
+        q1, q3 = np.percentile(col, 25), np.percentile(col, 75)
+        iqr = q3 - q1
+        lower, upper = q1 - k * iqr, q3 + k * iqr
+        mask &= (col >= lower) & (col <= upper)
+    return points[mask]
+```
+
+---
+
+### 2. 建立冠狀切面（通過 PC 近似錨點）
+
+**臨床標準**: 切面應垂直於 AC-PC 平面，且通過 Posterior Commissure。
+
+#### 2-1. PC 近似錨點
+
+用三腦室最後方（RAS 中 Y 最小）的點近似 PC 位置：
+
+1. 對三腦室點雲做 IQR 過濾
+2. 取 Y 軸第 5 百分位數以下的候選點
+3. 對候選點取**平均**（比取單點最小更穩定）
+
+```python
+y_threshold = np.percentile(points_clean[:, 1], 5)
+posterior_candidates = points_clean[points_clean[:, 1] <= y_threshold]
+pc_anchor = np.mean(posterior_candidates, axis=0)
+```
+
+#### 2-2. 冠狀切面法向量
+
+| 資訊來源 | 用途 |
+| --- | --- |
+| Falx 法向量（X 方向） | 確保切面平行於大腦中線 |
+| 腦室 APVI 前後徑向量（Y 方向） | 估計 AC-PC 軸方向 |
+
+兩者透過 Gram-Schmidt 正交化後取外積，得到冠狀面法向量（等同 AP 向量），平面通過 PC 錨點：
+
+```python
+coronal_normal = ap_vector   # AP 向量即冠狀面法向量
+D = -np.dot(coronal_normal, pc_anchor)
+```
+
+---
+
+### 3. 切取側腦室截面
+
+- 計算左右腦室所有點到冠狀面的距離
+- 保留距離 ≤ **2.0 mm** 的點
+- 投影到平面上消除厚度誤差
+- 用 Falx 平面確保左右腦室點不混淆
+
+---
+
+### 4. 消除雜訊與擬合內側壁 (Medial Wall)
+
+**臨床意義**: 量角線應從兩側腦室最高且靠中線的頂端出發，沿著**內側壁 (medial wall)** 往下切，這兩條線的夾角即為 Callosal Angle。因此我們不能隨機使用最低/最高點連線，而是透過 PCA/SVD 取邊緣特徵作擬合。
+
+1. **IQR 過濾雜訊**：先對左右腦室截面 2D 點群分別作 IQR 離群值過濾，避免孤立亮點（如上方雜訊）被誤認為最高點。
+2. **鎖定出發錨點**：
+   - **左腦室**：在 Z 軸最高的 10% 點群中，找出 **X 最大（最靠右/最內側）** 的點作為起點。
+   - **右腦室**：在 Z 軸最高的 10% 點群中，找出 **X 最小（最靠左/最內側）** 的點作為起點。
+3. **SVD 擬合向下方向**：
+   - **左腦室**：對截面中 `X ≥ 中位數` 的右半邊點群（內側部分）作 SVD，取得主要延伸方向。
+   - **右腦室**：對截面中 `X ≤ 中位數` 的左半邊點群（內側部分）作 SVD，取得主要延伸方向。
+   - 確保方向向量朝下 (`Z < 0`)。
+
+```python
+def fit_medial_wall_line(section, side):
+    # 1. 過濾雜訊
+    filtered_section = remove_outliers_iqr(section)
+    
+    # 2. 取最高 10% 中，最靠近中線的點當錨點
+    z_top_threshold = np.percentile(filtered_section[:, 2], 90)
+    top_points = filtered_section[filtered_section[:, 2] >= z_top_threshold]
+    
+    if side == 'left':
+        anchor_point = top_points[np.argmax(top_points[:, 0])]
+        medial = section[section[:, 0] >= np.median(section[:, 0])]
+    else:
+        anchor_point = top_points[np.argmin(top_points[:, 0])]
+        medial = section[section[:, 0] <= np.median(section[:, 0])]
+
+    # 3. 擬合內側壁主方向 (SVD)
+    centered = medial - np.mean(medial, axis=0)
+    _, _, Vt = np.linalg.svd(centered, full_matrices=False)
+    direction = Vt[0]
+    if direction[2] > 0: direction = -direction
+        
+    return anchor_point, direction
+```
+
+---
+
+### 5. 計算胼胝體角 (Callosal Angle)
+
+將左右兩側擬合出的**內側壁方向向中心延伸，求其 3D 最近交點作為角度「頂點」**。
+
+接著直接利用左右側內側壁的方向向量求兩者夾角：
+
+```python
+# 左右腦室分別獲得出發點與下方向量
+left_anchor, left_dir = fit_medial_wall_line(left_section, 'left')
+right_anchor, right_dir = fit_medial_wall_line(right_section, 'right')
+
+# 取兩條擬合線 3D 交點為幾何頂點（可做後續視覺化參考）
+vertex = find_line_intersection_3d(left_anchor, left_dir, right_anchor, right_dir)
+
+# 兩條擬合線的夾角即為 Callosal Angle
+dot_product = np.clip(np.dot(left_dir, right_dir), -1, 1)
+angle = np.degrees(np.arccos(dot_product))
+```
+
+```text
+       corpus callosum
+ left_dir ↗  θ  ↖ right_dir
+         /       \
+[ L ventricle ] [ R ventricle ]
+   ↑ medial wall   medial wall ↑
+      (Max X)         (Min X)
+```
+
+**降級機制**: 若截面點群全空或無法求得交點，將自動退回使用 PC 錨點作為頂點參考，角度為 0.0。
+
+---
+## 腦室體積與表面積 (Ventricle Volume & Surface Area)
+
+### 定義
+
+腦室體積為左右側腦室的體積總和，反映腦室擴大的程度。
+
+- **正常範圍**: 依年齡而異，老化本身會使腦室輕微擴大
+- **NPH 特徵**: 腦室體積明顯增大，且與顱內壓不成比例地擴張
+
+### 💡 白話文總結
+
+> **「用 Marching Cubes 把腦室 mask 轉換成三角網格，再把每個三角形與原點組成的四面體體積全部加起來，即得到腦室的平滑體積。」**
+
+---
+
+### 算法流程
+
+```mermaid
+flowchart TD
+    A[載入左右腦室 mask] --> B[Marching Cubes 提取表面網格]
+    B --> C[取得物理座標頂點與三角面]
+    C --> D[計算各三角形的有向四面體體積]
+    D --> E[加總得到平滑體積]
+    C --> F[mesh_surface_area 計算表面積]
+    E --> G[左右體積相加 = 總體積]
+    F --> G
+    G --> H[總體積 / 總表面積 = 體積表面積比]
+```
+
+---
+
+### 1. Marching Cubes 表面提取
+
+**目的**: 將體素化的腦室 mask 轉換為連續的三角網格，消除階梯狀邊界帶來的誤差。
+
+**方法**:
+1. 設定等值面閾值 `level=0.5`（0 = 背景，1 = 腦室）
+2. **Marching Cubes** 演算法掃描每個體素立方體，根據頂點是否超過閾值，切出三角面片
+3. 取得體素座標的頂點 (`vertices_voxel`) 和三角面索引 (`faces`)
+4. 利用影像的 **affine 矩陣**將頂點從體素座標轉換為物理座標（mm），保留真實的空間尺寸
+
+```python
+# 使用統一的表面提取函數
+mesh_result = extract_surface_mesh(image_obj, level=0.5, verbose=False)
+
+vertices_physical = mesh_result['vertices_physical']  # 物理座標頂點 (mm)
+faces = mesh_result['faces']                          # 三角面索引
+```
+
+---
+
+### 2. 體積計算（有向四面體法）
+
+**原理**: 對於一個封閉的三角網格，可以把每個三角面片與座標原點組成一個有向四面體，有向體積的總和即為封閉網格的體積。
+
+**公式推導**:
+
+對每個三角面 $(v_1, v_2, v_3)$：
+
+$$V_{\text{tetra}} = \frac{1}{6} \left| (v_2 - v_1) \times (v_3 - v_1) \cdot v_1 \right|$$
+
+總體積：
+
+$$V_{\text{total}} = \sum_{\text{face}} V_{\text{tetra}}$$
+
+**步驟**:
+
+1. 對每個三角面取得三個頂點的物理座標 $v_1, v_2, v_3$
+2. 計算兩條邊向量的**叉積** (Cross Product)：`(v2 - v1) × (v3 - v1)`
+3. 與 $v_1$ 做**點積** (Dot Product) 再除以 6，得到四面體有向體積
+4. 取絕對值後累加所有三角面的體積
+
+```python
+# 有向四面體體積計算
+volume = 0.0
+for face in faces:
+    v1, v2, v3 = vertices_physical[face[0]], vertices_physical[face[1]], vertices_physical[face[2]]
+    cross_product = np.cross(v2 - v1, v3 - v1)
+    triangle_volume = np.abs(np.dot(cross_product, v1)) / 6.0
+    volume += triangle_volume
+```
+
+---
+
+### 3. 表面積計算
+
+**方法**: 使用 `skimage.measure.mesh_surface_area()`，對每個三角面計算兩邊的叉積長度（即三角形面積 × 2），加總後除以 2。
+
+```python
+from skimage.measure import mesh_surface_area
+
+surface_area = mesh_surface_area(vertices_physical, faces)  # 單位: mm²
+```
+
+---
+
+### 4. 體積/表面積比 (Volume-Surface Ratio)
+
+**目的**: 反映腦室形狀的緊密程度，球形體積表面積比最大，細長或不規則形狀比值較小。
+
+```python
+# 左右腦室加總後計算比例
+total_volume = left_volume + right_volume          # mm³
+total_surface_area = left_surface_area + right_surface_area  # mm²
+total_ratio = total_volume / total_surface_area    # mm
+```
+
+---
+
 ## 共用計算模組
 
 ### Falx 有向距離計算
@@ -342,6 +627,7 @@ def find_max_diameter_convex_hull(points):
 |---|---|---|
 | **ALVI** | < 0.5 (50%) | ≥ 0.5 (50%) |
 | **Evan Index** | < 0.3 (30%) | ≥ 0.3 (30%) |
+| **Callosal Angle** | > 100° | ≤ 100° |
 
 ---
 

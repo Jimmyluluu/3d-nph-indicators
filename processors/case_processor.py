@@ -18,11 +18,13 @@ from model.evan_analyzer import (
     calculate_cranial_width
 )
 from model.alvi_analyzer import calculate_alvi
+from model.callosal_angle_analyzer import calculate_callosal_angle
 from model.visualization import (
     visualize_ventricle_distance,
     visualize_3d_evan_index,
     visualize_volume_surface_ratio,
     visualize_alvi,
+    visualize_callosal_angle,
 )
 
 from processors.printers import (
@@ -32,19 +34,30 @@ from processors.printers import (
 )
 
 
-def find_case_files(data_dir, require_original=True, require_falx=False):
+def _find_file_variants(data_path, candidates):
+    """從候選檔名清單中回傳第一個存在的路徑，找不到則回傳 None"""
+    for name in candidates:
+        p = data_path / name
+        if p.exists():
+            return p
+    return None
+
+
+def find_case_files(data_dir, require_original=True, require_falx=False, require_3rd_ventricle=False):
     """
     尋找案例資料夾中的腦室和原始影像檔案路徑
     
     支援兩種命名模式：
-    - 標準命名: Ventricle_L.nii.gz, Ventricle_R.nii.gz, original.nii.gz, falx.nii.gz
-    - data_ 命名: mask_Ventricle_L_{num}.nii.gz, mask_Ventricle_R_{num}.nii.gz, 
-                  original_{num}.nii.gz, mask_Falx_{num}.nii.gz
+    - 標準命名: Ventricle_L.nii.gz, Ventricle_R.nii.gz, original.nii.gz,
+                falx.nii.gz / Falx.nii.gz, Third_ventricle.nii.gz / Third-ventricle.nii.gz
+    - data_ 命名: mask_Ventricle_L_{num}.nii.gz, mask_Ventricle_R_{num}.nii.gz,
+                  original_{num}.nii.gz, mask_Falx_{num}.nii.gz, mask_Third-ventricle_{num}.nii.gz
     
     Args:
         data_dir: 資料目錄路徑
         require_original: 是否需要原始影像檔案
         require_falx: 是否需要 Falx 檔案
+        require_3rd_ventricle: 是否需要三腦室檔案
         
     Returns:
         dict: 包含檔案路徑的字典
@@ -52,54 +65,83 @@ def find_case_files(data_dir, require_original=True, require_falx=False):
             - 'right_path': 右腦室檔案路徑
             - 'original_path': 原始影像檔案路徑 (如果 require_original=True)
             - 'falx_path': Falx 檔案路徑 (如果 require_falx=True)
+            - 'third_vent_path': 三腦室檔案路徑 (如果 require_3rd_ventricle=True)
             
     Raises:
         FileNotFoundError: 如果找不到必要的檔案
     """
     data_path = Path(data_dir)
     case_name = data_path.name
-    
-    # 預設使用標準命名
+
+    # ── 預設：標準命名 ──
     left_path = data_path / "Ventricle_L.nii.gz"
     right_path = data_path / "Ventricle_R.nii.gz"
     original_path = data_path / "original.nii.gz"
-    falx_path = data_path / "falx.nii.gz"
-    
-    # 檢查是否為 data_ 開頭的命名模式
+
+    # Falx：支援大小寫變體
+    falx_path = _find_file_variants(data_path, ["falx.nii.gz", "Falx.nii.gz"])
+
+    # 三腦室：支援底線/連字號變體
+    third_vent_path = _find_file_variants(data_path, [
+        "Third_ventricle.nii.gz",
+        "Third-ventricle.nii.gz",
+        "Third_Ventricle.nii.gz",
+        "Third-Ventricle.nii.gz",
+    ])
+
+    # ── data_ 開頭的命名模式 ──
     if case_name.startswith('data_'):
         data_num = case_name.replace('data_', '')
-        left_path_alt = data_path / f"mask_Ventricle_L_{data_num}.nii.gz"
-        right_path_alt = data_path / f"mask_Ventricle_R_{data_num}.nii.gz"
+        left_path_alt   = data_path / f"mask_Ventricle_L_{data_num}.nii.gz"
+        right_path_alt  = data_path / f"mask_Ventricle_R_{data_num}.nii.gz"
         original_path_alt = data_path / f"original_{data_num}.nii.gz"
-        falx_path_alt = data_path / f"mask_Falx_{data_num}.nii.gz"
-        
+        falx_path_alt   = _find_file_variants(data_path, [
+            f"mask_Falx_{data_num}.nii.gz",
+            f"mask_falx_{data_num}.nii.gz",
+        ])
+        third_vent_path_alt = _find_file_variants(data_path, [
+            f"mask_Third-ventricle_{data_num}.nii.gz",
+            f"mask_Third_ventricle_{data_num}.nii.gz",
+            f"mask_Third-Ventricle_{data_num}.nii.gz",
+            f"mask_Third_Ventricle_{data_num}.nii.gz",
+        ])
+
         if left_path_alt.exists():
             left_path = left_path_alt
             right_path = right_path_alt
             original_path = original_path_alt
-            falx_path = falx_path_alt
-    
-    # 驗證檔案存在
+            if falx_path_alt:
+                falx_path = falx_path_alt
+            if third_vent_path_alt:
+                third_vent_path = third_vent_path_alt
+
+    # ── 驗證必要檔案存在 ──
     if not left_path.exists() or not right_path.exists():
         raise FileNotFoundError(f"在 {data_dir} 中找不到腦室檔案")
-    
+
     if require_original and not original_path.exists():
         raise FileNotFoundError(f"在 {data_dir} 中找不到原始影像檔案")
-    
-    if require_falx and not falx_path.exists():
+
+    if require_falx and (falx_path is None or not falx_path.exists()):
         raise FileNotFoundError(f"在 {data_dir} 中找不到 Falx 檔案")
-    
+
+    if require_3rd_ventricle and (third_vent_path is None or not third_vent_path.exists()):
+        raise FileNotFoundError(f"在 {data_dir} 中找不到三腦室檔案")
+
     result = {
         'left_path': left_path,
         'right_path': right_path,
     }
-    
+
     if require_original:
         result['original_path'] = original_path
-    
+
     if require_falx:
         result['falx_path'] = falx_path
-    
+
+    if require_3rd_ventricle:
+        result['third_vent_path'] = third_vent_path
+
     return result
 
 
@@ -441,6 +483,72 @@ def process_case_alvi(data_dir, output_image_path, show_plot=False, verbose=True
             'skull_endpoints': alvi_data['skull_endpoints'],
             'z_range': list(alvi_data['z_range']),
             'voxel_size': list(alvi_data['voxel_size'])
+        }
+
+    except Exception as e:
+        return {
+            'status': 'error',
+            'error_message': str(e),
+            'error_type': type(e).__name__
+        }
+
+def process_case_callosal_angle(data_dir, output_image_path, show_plot=False, verbose=True):
+    """
+    處理單一案例 - Callosal Angle (胼胝體角)
+
+    Args:
+        data_dir: 資料目錄路徑
+        output_image_path: 輸出圖片路徑
+        show_plot: 是否顯示互動式圖表
+        verbose: 是否顯示詳細資訊
+
+    Returns:
+        dict: 包含所有測量結果的字典
+    """
+    try:
+        # 使用統一的檔案路徑查找函數 (需要 Falx 和三腦室)
+        files = find_case_files(data_dir, require_original=True, require_falx=True, require_3rd_ventricle=True)
+        left_path = files['left_path']
+        right_path = files['right_path']
+        original_path = files['original_path']
+        falx_path = files['falx_path']
+        third_vent_path = files['third_vent_path']
+
+        # 載入腦室影像（自動拉正到 RAS+ 方向）
+        left_vent, right_vent = load_ventricle_pair(
+            str(left_path), str(right_path), verbose=verbose
+        )
+
+        # 載入原始影像（自動拉正到 RAS+ 方向）
+        original_img = load_original_image(str(original_path), verbose=verbose)
+
+        # 載入 Falx 影像和三腦室
+        from model.calculation import load_falx_image, load_3rd_ventricle_image
+        falx_img = load_falx_image(str(falx_path), verbose=verbose)
+        third_vent_img = load_3rd_ventricle_image(str(third_vent_path), verbose=verbose)
+
+        # 計算 Callosal Angle
+        angle_data = calculate_callosal_angle(
+            left_vent, right_vent, third_vent_img,
+            falx_img=falx_img,
+            verbose=verbose
+        )
+
+        # 視覺化
+        visualize_callosal_angle(
+            left_vent, right_vent, third_vent_img, original_img,
+            angle_data,
+            output_path=str(output_image_path),
+            show_plot=show_plot
+        )
+
+        # 返回成功結果
+        return {
+            'status': 'success',
+            'angle': angle_data['angle'],
+            'center_point': list(angle_data['center_point']),
+            'left_highest_point': list(angle_data['left_highest_point']),
+            'right_highest_point': list(angle_data['right_highest_point'])
         }
 
     except Exception as e:

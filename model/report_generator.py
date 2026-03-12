@@ -103,6 +103,12 @@ INDICATOR_CONFIGS = {
         'total_ratio_field': 'total_ratio',
         'total_ratio_label': 'V/SA 比例 (mm)',
         'footer': 'Volume-to-Surface Ratio Calculator'
+    },
+    'callosal_angle': {
+        'title': 'Callosal Angle (胼胝體角) 批次處理報表',
+        'angle_field': 'angle',
+        'angle_label': '胼胝體角 (°)',
+        'footer': 'Callosal Angle Calculator'
     }
 }
 
@@ -182,6 +188,20 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
 
                     f.write(f"| {case_id_display} | {left_volume:.1f} | {right_volume:.1f} | {total_volume:.1f} | {total_ratio:.4f} | {time_str} |\n")
 
+            elif indicator_type == "callosal_angle":
+                f.write(f"| 案例 ID | {config['angle_label']} | 處理時間 |\n")
+                f.write("|---------|---------------|----------|\n")
+                for result in successful_results:
+                    case_id = result.get('case_id', 'N/A')
+                    angle = result.get(config['angle_field'], 0)
+                    time_str = result.get('processing_time', 'N/A')
+                    
+                    if is_nph_case(result):
+                        case_id_display = f"{case_id} ⚠️ NPH"
+                    else:
+                        case_id_display = case_id
+                        
+                    f.write(f"| {case_id_display} | {angle:.1f}° | {time_str} |\n")
             else:
                 # 原有的 distance/ratio 格式 (centroid_ratio, evan_index, alvi)
                 # ALVI 使用 skull_ap_diameter_mm 而非 cranial_width_mm
@@ -227,6 +247,12 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                 f.write(f"| {config['total_volume_label']} | {min(total_volumes):.1f} | {max(total_volumes):.1f} | {sum(total_volumes)/len(total_volumes):.1f} | {sorted(total_volumes)[len(total_volumes)//2]:.1f} |\n")
                 f.write(f"| {config['total_ratio_label']} | {min(total_ratios):.4f} | {max(total_ratios):.4f} | {sum(total_ratios)/len(total_ratios):.4f} | {sorted(total_ratios)[len(total_ratios)//2]:.4f} |\n")
 
+            elif indicator_type == "callosal_angle":
+                angles = [r[config['angle_field']] for r in successful_results]
+                f.write("\n### 統計數據（全部案例）\n\n")
+                f.write("| 指標 | 最小值 | 最大值 | 平均值 | 中位數 |\n")
+                f.write("|------|--------|--------|--------|--------|\n")
+                f.write(f"| {config['angle_label']} | {min(angles):.1f}° | {max(angles):.1f}° | {sum(angles)/len(angles):.1f}° | {sorted(angles)[len(angles)//2]:.1f}° |\n")
             else:
                 # 原有的 distance/ratio 統計
                 distances = [r[config['distance_field']] for r in successful_results]
@@ -263,6 +289,11 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                     f.write("|------|--------|--------|--------|--------|\n")
                     f.write(f"| {config['total_volume_label']} | {min(nph_total_volumes):.1f} | {max(nph_total_volumes):.1f} | {sum(nph_total_volumes)/len(nph_total_volumes):.1f} | {sorted(nph_total_volumes)[len(nph_total_volumes)//2]:.1f} |\n")
                     f.write(f"| {config['total_ratio_label']} | {min(nph_total_ratios):.4f} | {max(nph_total_ratios):.4f} | {sum(nph_total_ratios)/len(nph_total_ratios):.4f} | {sorted(nph_total_ratios)[len(nph_total_ratios)//2]:.4f} |\n")
+                elif indicator_type == "callosal_angle":
+                    nph_angles = [r[config['angle_field']] for r in nph_results]
+                    f.write("| 指標 | 最小值 | 最大值 | 平均值 | 中位數 |\n")
+                    f.write("|------|--------|--------|--------|--------|\n")
+                    f.write(f"| {config['angle_label']} | {min(nph_angles):.1f}° | {max(nph_angles):.1f}° | {sum(nph_angles)/len(nph_angles):.1f}° | {sorted(nph_angles)[len(nph_angles)//2]:.1f}° |\n")
                 else:
                     # 原有的 distance/ratio 統計 (centroid_ratio, evan_index, alvi)
                     nph_distances = [r[config['distance_field']] for r in nph_results]
@@ -294,6 +325,11 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                     f.write("|------|--------|--------|--------|--------|\n")
                     f.write(f"| {config['total_volume_label']} | {min(non_nph_total_volumes):.1f} | {max(non_nph_total_volumes):.1f} | {sum(non_nph_total_volumes)/len(non_nph_total_volumes):.1f} | {sorted(non_nph_total_volumes)[len(non_nph_total_volumes)//2]:.1f} |\n")
                     f.write(f"| {config['total_ratio_label']} | {min(non_nph_total_ratios):.4f} | {max(non_nph_total_ratios):.4f} | {sum(non_nph_total_ratios)/len(non_nph_total_ratios):.4f} | {sorted(non_nph_total_ratios)[len(non_nph_total_ratios)//2]:.4f} |\n")
+                elif indicator_type == "callosal_angle":
+                    non_nph_angles = [r[config['angle_field']] for r in non_nph_results]
+                    f.write("| 指標 | 最小值 | 最大值 | 平均值 | 中位數 |\n")
+                    f.write("|------|--------|--------|--------|--------|\n")
+                    f.write(f"| {config['angle_label']} | {min(non_nph_angles):.1f}° | {max(non_nph_angles):.1f}° | {sum(non_nph_angles)/len(non_nph_angles):.1f}° | {sorted(non_nph_angles)[len(non_nph_angles)//2]:.1f}° |\n")
                 else:
                     # 原有的 distance/ratio 統計 (centroid_ratio, evan_index, alvi)
                     non_nph_distances = [r[config['distance_field']] for r in non_nph_results]
@@ -340,6 +376,15 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                     ratio_diff = nph_ratio_mean - non_nph_ratio_mean
                     ratio_pct = (ratio_diff / non_nph_ratio_mean) * 100
                     f.write(f"| **{config['total_ratio_label']}** | **{nph_ratio_mean:.4f}** | **{non_nph_ratio_mean:.4f}** | **{ratio_diff:+.4f}** | **{ratio_pct:+.1f}%** |\n")
+                elif indicator_type == "callosal_angle":
+                    nph_angles = [r[config['angle_field']] for r in nph_results]
+                    non_nph_angles = [r[config['angle_field']] for r in non_nph_results]
+                    nph_angle_mean = sum(nph_angles) / len(nph_angles)
+                    non_nph_angle_mean = sum(non_nph_angles) / len(non_nph_angles)
+                    angle_diff = nph_angle_mean - non_nph_angle_mean
+                    angle_pct = (angle_diff / non_nph_angle_mean) * 100 if non_nph_angle_mean != 0 else 0
+                    f.write(f"| **{config['angle_label']}** | **{nph_angle_mean:.1f}°** | **{non_nph_angle_mean:.1f}°** | **{angle_diff:+.1f}°** | **{angle_pct:+.1f}%** |\n")
+
                 else:
                     # 原有的 distance/ratio 組間差異計算
                     nph_distances = [r[config['distance_field']] for r in nph_results]
@@ -398,6 +443,15 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                             rank_note = " (最低)"
 
                         f.write(f"| {case_id} | {total_volume:.1f} | {total_area:.1f} | {total_ratio:.4f} | {i}{rank_note} |\n")
+                elif indicator_type == "callosal_angle":
+                    f.write(f"| 案例 ID | {config['angle_label']} | 排序 |\n")
+                    f.write("|---------|---------------|------|\n")
+                    nph_sorted = sorted(nph_results, key=lambda x: x[config['angle_field']])
+                    for i, result in enumerate(nph_sorted, 1):
+                        case_id = result.get('case_id', 'N/A')
+                        angle = result.get(config['angle_field'], 0)
+                        rank_note = " (最小)" if i == 1 else (" (最大)" if i == len(nph_sorted) else "")
+                        f.write(f"| {case_id} | {angle:.1f}° | {i}{rank_note} |\n")
                 else:
                     f.write(f"| 案例 ID | {config['distance_label']} | 顱內寬度 (mm) | {config['ratio_label']} | 百分比 | 排序 |\n")
                     f.write("|---------|---------------|---------------|------|--------|------|\n")

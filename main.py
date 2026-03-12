@@ -26,6 +26,8 @@ def main():
   evan_index          - 腦室前腳最大距離/顱內寬度比值（3D Evan Index）
   surface_area        - 腦室表面積（mm^2）
   volume_surface_ratio - 體積與表面積比例（mm，球形度指標）
+  alvi                - ALVI (Anteroposterior Lateral Ventricle Index)
+  callosal_angle      - 胼胝體角 (Callosal Angle)
 
 使用範例:
   # 批次處理 - 雙資料夾模式（NPH + 非NPH）
@@ -53,7 +55,7 @@ def main():
 
     batch_parser.add_argument(
         '--type', '-t',
-        choices=['centroid_ratio', 'evan_index', 'surface_area', 'volume_surface_ratio', 'alvi'],
+        choices=['centroid_ratio', 'evan_index', 'surface_area', 'volume_surface_ratio', 'alvi', 'callosal_angle'],
         default='centroid_ratio',
         help='指標類型（預設: centroid_ratio）'
     )
@@ -108,7 +110,7 @@ def main():
 
     single_parser.add_argument(
         '--type', '-t',
-        choices=['centroid_ratio', 'evan_index', 'surface_area', 'volume_surface_ratio', 'alvi'],
+        choices=['centroid_ratio', 'evan_index', 'surface_area', 'volume_surface_ratio', 'alvi', 'callosal_angle'],
         default='centroid_ratio',
         help='指標類型（預設: centroid_ratio）'
     )

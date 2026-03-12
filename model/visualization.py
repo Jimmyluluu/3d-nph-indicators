@@ -908,3 +908,127 @@ def visualize_alvi(left_ventricle, right_ventricle, original_img, alvi_data,
         fig.show()
     
     return fig
+
+def visualize_callosal_angle(left_ventricle, right_ventricle, third_ventricle, original_img, angle_data,
+                             output_path="callosal_angle.png", show_plot=True):
+    """
+    視覺化 Callosal Angle (胼胝體角)
+    
+    Args:
+        left_ventricle: 左腦室影像物件
+        right_ventricle: 右腦室影像物件
+        third_ventricle: 三腦室影像物件
+        original_img: 原始腦部影像物件
+        angle_data: Callosal Angle 計算結果字典
+        output_path: 輸出圖片路徑
+        show_plot: 是否顯示互動式圖表
+    
+    Returns:
+        plotly figure物件
+    """
+    import plotly.graph_objects as go
+    from model.image_processing import extract_surface_mesh, get_image_data
+    
+    print(f"\n準備 Callosal Angle 視覺化...")
+    
+    # 建立圖表
+    fig = go.Figure()
+    
+    # 1. 繪製腦部表面網格 (可選)
+    try:
+        original_data = get_image_data(original_img)
+        threshold = np.percentile(original_data[original_data > 0], 30)
+        
+        brain_mesh = extract_surface_mesh(original_img, level=threshold, verbose=False)
+        verts_physical = brain_mesh['vertices_physical']
+        faces = brain_mesh['faces']
+        
+        fig.add_trace(go.Mesh3d(
+            x=verts_physical[:, 0],
+            y=verts_physical[:, 1],
+            z=verts_physical[:, 2],
+            i=faces[:, 0],
+            j=faces[:, 1],
+            k=faces[:, 2],
+            color='lightgray',
+            opacity=0.1,
+            name='Brain Surface',
+            showlegend=True,
+            lighting=dict(ambient=0.6, diffuse=0.8, specular=0.2),
+            flatshading=False
+        ))
+    except Exception as e:
+        print(f"警告: 無法提取腦部表面 - {str(e)}")
+        
+    # 2. 顯示腦室
+    def add_ventricle(vent_img, color, name):
+        try:
+            mesh = extract_surface_mesh(vent_img, level=0.5, verbose=False)
+            verts = mesh['vertices_physical']
+            faces = mesh['faces']
+            fig.add_trace(go.Mesh3d(
+                x=verts[:, 0], y=verts[:, 1], z=verts[:, 2],
+                i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
+                color=color, opacity=0.4, name=name,
+                showlegend=True
+            ))
+        except Exception as e:
+            print(f"警告: 提取{name}失敗 - {str(e)}")
+            
+    add_ventricle(left_ventricle, 'blue', 'Left Ventricle')
+    add_ventricle(right_ventricle, 'red', 'Right Ventricle')
+    add_ventricle(third_ventricle, 'green', '3rd Ventricle')
+    
+    # 3. 標示中點和最高點
+    c_pt = angle_data['center_point']
+    l_pt = angle_data['left_highest_point']
+    r_pt = angle_data['right_highest_point']
+    angle = angle_data['angle']
+    
+    fig.add_trace(go.Scatter3d(
+        x=[c_pt[0]], y=[c_pt[1]], z=[c_pt[2]],
+        mode='markers', marker=dict(size=8, color='yellow', symbol='circle'),
+        name='3rd Ventricle Center'
+    ))
+    
+    if l_pt != (0,0,0) and r_pt != (0,0,0):
+        # 繪製夾角兩邊
+        fig.add_trace(go.Scatter3d(
+            x=[l_pt[0], c_pt[0], r_pt[0]],
+            y=[l_pt[1], c_pt[1], r_pt[1]],
+            z=[l_pt[2], c_pt[2], r_pt[2]],
+            mode='markers+lines',
+            marker=dict(size=6, color='magenta', symbol='diamond'),
+            line=dict(color='magenta', width=5),
+            name=f'Callosal Angle: {angle:.1f}°'
+        ))
+        
+    # 4. 設定版面
+    risk_status = "⚠️ NPH Risk" if angle <= 100 and angle > 0 else "✓ Normal" if angle > 0 else "Error"
+    
+    fig.update_layout(
+        title={
+            'text': f"Callosal Angle Analysis<br>" +
+                    f"<sub>Angle: {angle:.1f}° | Status: {risk_status}</sub>",
+            'y':0.95, 'x':0.5, 'xanchor': 'center', 'yanchor': 'top',
+            'font': dict(size=20)
+        },
+        scene=dict(
+            xaxis_title='Right-Left (X)',
+            yaxis_title='Anterior-Posterior (Y)',
+            zaxis_title='Superior-Inferior (Z)',
+            aspectmode='data'
+        ),
+        margin=dict(l=0, r=0, b=0, t=80)
+    )
+    
+    # 只儲存 HTML（互動式 3D，不儲存 PNG 以加速）
+    html_path = output_path.replace('.png', '.html')
+    fig.write_html(html_path)
+    print(f"✓ 互動式 3D 已儲存: {html_path}")
+
+    if show_plot:
+        fig.show()
+
+    print(f"✓ Callosal Angle 視覺化完成")
+    return fig

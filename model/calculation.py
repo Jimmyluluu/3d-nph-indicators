@@ -96,6 +96,27 @@ def load_falx_image(falx_path, verbose=True):
 
     return falx_img
 
+def load_3rd_ventricle_image(third_vent_path, verbose=True):
+    """
+    載入三腦室 mask 並自動拉正到 RAS+ 方向
+
+    Args:
+        third_vent_path: 三腦室 mask 檔案路徑
+        verbose: 是否顯示載入資訊
+
+    Returns:
+        nibabel.Nifti1Image: 已拉正到 RAS+ 方向的影像物件
+    """
+    # 載入影像並自動拉正到 RAS+ 方向
+    third_vent_img, orig_ornt, new_ornt = reorient_image(third_vent_path, verbose=False)
+
+    if verbose:
+        print(f"  三腦室影像已載入: {third_vent_path}")
+        print(f"    形狀: {third_vent_img.shape}, 體素: {third_vent_img.header.get_zooms()[:3]}")
+
+    return third_vent_img
+
+
 
 def fit_falx_plane(falx_img, verbose=True):
     """

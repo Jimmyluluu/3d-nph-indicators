@@ -35,6 +35,7 @@ def scan_data_directory(base_dir, indicator_type, skip_not_ok=True):
     all_dirs = [d for d in base_path.iterdir() if d.is_dir()]
     
     requires_original = indicator_type not in ['surface_area', 'volume_surface_ratio']
+    requires_3rd_ventricle = indicator_type in ['callosal_angle']
 
     # 過濾掉隱藏檔案（._ 開頭）和 _not_ok 標記的資料夾
     valid_dirs = []
@@ -48,28 +49,50 @@ def scan_data_directory(base_dir, indicator_type, skip_not_ok=True):
             continue
 
         # 檢查是否包含必要的檔案（兩種命名模式）
-        # 模式 1: 標準命名
-        required_files_p1 = [d / "Ventricle_L.nii.gz", d / "Ventricle_R.nii.gz"]
+        # ── 模式 1: 標準命名 ──
+        p1_basic = [d / "Ventricle_L.nii.gz", d / "Ventricle_R.nii.gz"]
         if requires_original:
-            required_files_p1.append(d / "original.nii.gz")
+            p1_basic.append(d / "original.nii.gz")
 
-        # 模式 2: data_ 開頭的命名
+        p1_ok = all(f.exists() for f in p1_basic)
+        if p1_ok and requires_3rd_ventricle:
+            has_3rd = any((d / n).exists() for n in [
+                "Third_ventricle.nii.gz", "Third-ventricle.nii.gz",
+                "Third_Ventricle.nii.gz", "Third-Ventricle.nii.gz",
+            ])
+            has_falx = any((d / n).exists() for n in ["falx.nii.gz", "Falx.nii.gz"])
+            p1_ok = has_3rd and has_falx
+
+        if p1_ok:
+            valid_dirs.append(d)
+            continue
+
+        # ── 模式 2: data_ 開頭的命名 ──
         if d.name.startswith('data_'):
             data_num = d.name.replace('data_', '')
-            required_files_p2 = [
+            p2_basic = [
                 d / f"mask_Ventricle_L_{data_num}.nii.gz",
                 d / f"mask_Ventricle_R_{data_num}.nii.gz"
             ]
             if requires_original:
-                required_files_p2.append(d / f"original_{data_num}.nii.gz")
-        else:
-            required_files_p2 = []
+                p2_basic.append(d / f"original_{data_num}.nii.gz")
 
-        # 檢查任一模式是否存在
-        if all(f.exists() for f in required_files_p1):
-            valid_dirs.append(d)
-        elif required_files_p2 and all(f.exists() for f in required_files_p2):
-            valid_dirs.append(d)
+            p2_ok = all(f.exists() for f in p2_basic)
+            if p2_ok and requires_3rd_ventricle:
+                has_3rd_p2 = any((d / n).exists() for n in [
+                    f"mask_Third-ventricle_{data_num}.nii.gz",
+                    f"mask_Third_ventricle_{data_num}.nii.gz",
+                    f"mask_Third-Ventricle_{data_num}.nii.gz",
+                    f"mask_Third_Ventricle_{data_num}.nii.gz",
+                ])
+                has_falx_p2 = any((d / n).exists() for n in [
+                    f"mask_Falx_{data_num}.nii.gz",
+                    f"mask_falx_{data_num}.nii.gz",
+                ])
+                p2_ok = has_3rd_p2 and has_falx_p2
+
+            if p2_ok:
+                valid_dirs.append(d)
 
     return sorted(valid_dirs)
 
@@ -153,6 +176,10 @@ def batch_process(data_dir=None, indicator_type="centroid_ratio", skip_not_ok=Tr
     elif indicator_type == "alvi":
         process_func = lambda data_dir, output_path, show_plot=False, verbose=True: process_case_alvi(data_dir, output_path, show_plot=show_plot, verbose=verbose)
         indicator_name = "ALVI (Anteroposterior Lateral Ventricle Index)"
+    elif indicator_type == "callosal_angle":
+        from processors.case_processor import process_case_callosal_angle
+        process_func = lambda data_dir, output_path, show_plot=False, verbose=True: process_case_callosal_angle(data_dir, output_path, show_plot=show_plot, verbose=verbose)
+        indicator_name = "Callosal Angle (胼胝體角)"
     else:
         raise ValueError(f"不支援的指標類型: {indicator_type}")
 
@@ -407,6 +434,27 @@ def batch_process(data_dir=None, indicator_type="centroid_ratio", skip_not_ok=Tr
                 analyzer.generate_roc_curve(str(alvi_roc_path))
                 logger.success(f"ALVI ROC 曲線已生成: {alvi_roc_path}")
                 
+            except Exception as e:
+                logger.error(f"進階分析執行失敗: {str(e)}", e)
+
+        # 如果是 Callosal Angle，自動執行進階分析與 ROC 曲線
+        if indicator_type == "callosal_angle":
+            try:
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+
+                logger.info("\n執行 Callosal Angle 進階分析...")
+                analyzer = create_analyzer('callosal_angle', str(md_path))
+
+                ca_analysis_filename = f'callosal_angle_analysis_{timestamp}.md'
+                ca_analysis_path = output_path / ca_analysis_filename
+                analyzer.generate_report(str(ca_analysis_path))
+                logger.success(f"Callosal Angle 分析報告已生成: {ca_analysis_path}")
+
+                ca_roc_filename = f'callosal_angle_roc_{timestamp}.png'
+                ca_roc_path = output_path / ca_roc_filename
+                analyzer.generate_roc_curve(str(ca_roc_path))
+                logger.success(f"Callosal Angle ROC 曲線已生成: {ca_roc_path}")
+
             except Exception as e:
                 logger.error(f"進階分析執行失敗: {str(e)}", e)
 

@@ -21,13 +21,13 @@
 │
 └── model/                       # 純計算和視覺化模組
     ├── calculation.py          # 基礎計算（含統一載入函數、Falx 工具函數）
-    ├── cal_volume_surface.py   # 體積與表面積計算
     ├── alvi_analyzer.py        # ALVI 計算模組
     ├── evan_analyzer.py        # 3D Evan Index 計算模組
+    ├── callosal_angle_analyzer.py  # Callosal Angle 計算模組（新增）
     ├── result_analyzer.py      # 批次結果分析（統計、ROC 曲線）
     ├── visualization.py        # 3D 視覺化
     ├── image_processing.py     # 影像處理工具
-    └── report_generator.py    # 報表產生
+    └── report_generator.py     # 報表產生
 ```
 
 **職責劃分:**
@@ -326,9 +326,10 @@ processors/logger.py
 
 ## ✅ 開發新指標檢查清單
 
-- [ ] 在 `model/` 新增計算模組（如 `model/xxx_analyzer.py`）或在 `model/calculation.py` 新增計算函數
+- [ ]1. **定義指標配置**：在 `report_generator.py` 和 `result_analyzer.py` 裡的 `INDICATOR_CONFIGS` 註冊新指標設定檔。
+2. **新增算法模組**：在 `model/` 資料夾中實作（如 `new_indicator_analyzer.py` 或 `callosal_angle_analyzer.py`），並定義 `calculate_xxx()`。
+3. **擴充 Case Processor**：在 `processors/case_processor.py` 撰寫 `process_case_xxx()` 調度函數。
 - [ ] 在 `model/visualization.py` 新增視覺化函數（接受物件不接受路徑）
-- [ ] 在 `processors/case_processor.py` 新增 `process_case_xxx()` 處理函數
 - [ ] 使用 `load_ventricle_pair()`、`load_original_image()`、`load_falx_image()` 載入影像
 - [ ] print 輸出邏輯放在 `processors/printers.py`，不放在 model/
 - [ ] 在 `processors/batch_processor.py` 新增支援
