@@ -109,6 +109,33 @@ INDICATOR_CONFIGS = {
         'angle_field': 'angle',
         'angle_label': '胼胝體角 (°)',
         'footer': 'Callosal Angle Calculator'
+    },
+    'callosal_area': {
+        'title': 'Callosal 平面三角形面積批次處理報表',
+        'ratio_field': 'net_triangle_ratio',
+        'ratio_percent_field': 'net_triangle_ratio_percent',
+        'ratio_label': '淨面積占比',
+        'area_field': 'net_triangle_area_mm2',
+        'area_label': '淨面積 [左右腦室重疊 - 三腦室重疊] (mm²)',
+        'raw_area_field': 'triangle_area_mm2',
+        'raw_area_label': '三角形總面積 (mm²)',
+        'left_area_field': 'left_in_triangle_area_mm2',
+        'left_area_label': '左腦室在三角形內面積 (mm²)',
+        'right_area_field': 'right_in_triangle_area_mm2',
+        'right_area_label': '右腦室在三角形內面積 (mm²)',
+        'lr_overlap_area_field': 'left_right_overlap_area_mm2',
+        'lr_overlap_area_label': '左∩右 重疊 (mm²)',
+        'lt_overlap_area_field': 'left_third_overlap_area_mm2',
+        'lt_overlap_area_label': '左∩三 重疊 (mm²)',
+        'rt_overlap_area_field': 'right_third_overlap_area_mm2',
+        'rt_overlap_area_label': '右∩三 重疊 (mm²)',
+        'lrt_overlap_area_field': 'triple_overlap_area_mm2',
+        'lrt_overlap_area_label': '左∩右∩三 重疊 (mm²)',
+        'lateral_overlap_area_field': 'lateral_overlap_area_mm2',
+        'lateral_overlap_area_label': '左右聯集面積（在三角形內） (mm²)',
+        'overlap_area_field': 'third_overlap_area_mm2',
+        'overlap_area_label': '三腦室在三角形內面積 (mm²)',
+        'footer': 'Callosal Plane Area Calculator'
     }
 }
 
@@ -164,8 +191,21 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
 
         # 成功案例表格
         successful_results = [r for r in results if r.get('status') == 'success']
+        excluded_zero_count = 0
+
+        if indicator_type == "callosal_area":
+            raw_success_count = len(successful_results)
+            successful_results = [
+                r for r in successful_results
+                if r.get(config['ratio_percent_field'], 0) > 0
+            ]
+            excluded_zero_count = raw_success_count - len(successful_results)
+
         if successful_results:
             f.write("## 測量結果\n\n")
+
+            if indicator_type == "callosal_area" and excluded_zero_count > 0:
+                f.write(f"> 註：已排除 {excluded_zero_count} 個預測為 0 的案例（不納入統計與 ROC/AUC）。\n\n")
 
             # 根據指標類型決定表格格式
             if indicator_type == "volume_surface_ratio":
@@ -202,6 +242,30 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                         case_id_display = case_id
                         
                     f.write(f"| {case_id_display} | {angle:.1f}° | {time_str} |\n")
+            elif indicator_type == "callosal_area":
+                f.write(f"| 案例 ID | {config['ratio_label']} (%) | {config['area_label']} | {config['raw_area_label']} | {config['left_area_label']} | {config['right_area_label']} | {config['lr_overlap_area_label']} | {config['lt_overlap_area_label']} | {config['rt_overlap_area_label']} | {config['lrt_overlap_area_label']} | {config['lateral_overlap_area_label']} | {config['overlap_area_label']} | 處理時間 |\n")
+                f.write("|---------|----------------|---------------|---------------|---------------|---------------|---------------|---------------|---------------|-------------------|----------------|----------------|----------|\n")
+                for result in successful_results:
+                    case_id = result.get('case_id', 'N/A')
+                    ratio_percent = result.get(config['ratio_percent_field'], 0)
+                    area = result.get(config['area_field'], 0)
+                    raw_area = result.get(config['raw_area_field'], 0)
+                    left_area = result.get(config['left_area_field'], 0)
+                    right_area = result.get(config['right_area_field'], 0)
+                    lr_overlap_area = result.get(config['lr_overlap_area_field'], 0)
+                    lt_overlap_area = result.get(config['lt_overlap_area_field'], 0)
+                    rt_overlap_area = result.get(config['rt_overlap_area_field'], 0)
+                    lrt_overlap_area = result.get(config['lrt_overlap_area_field'], 0)
+                    lateral_overlap_area = result.get(config['lateral_overlap_area_field'], 0)
+                    overlap_area = result.get(config['overlap_area_field'], 0)
+                    time_str = result.get('processing_time', 'N/A')
+
+                    if is_nph_case(result):
+                        case_id_display = f"{case_id} ⚠️ NPH"
+                    else:
+                        case_id_display = case_id
+
+                    f.write(f"| {case_id_display} | {ratio_percent:.2f}% | {area:.2f} | {raw_area:.2f} | {left_area:.2f} | {right_area:.2f} | {lr_overlap_area:.2f} | {lt_overlap_area:.2f} | {rt_overlap_area:.2f} | {lrt_overlap_area:.2f} | {lateral_overlap_area:.2f} | {overlap_area:.2f} | {time_str} |\n")
             else:
                 # 原有的 distance/ratio 格式 (centroid_ratio, evan_index, alvi)
                 # ALVI 使用 skull_ap_diameter_mm 而非 cranial_width_mm
@@ -253,6 +317,12 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                 f.write("| 指標 | 最小值 | 最大值 | 平均值 | 中位數 |\n")
                 f.write("|------|--------|--------|--------|--------|\n")
                 f.write(f"| {config['angle_label']} | {min(angles):.1f}° | {max(angles):.1f}° | {sum(angles)/len(angles):.1f}° | {sorted(angles)[len(angles)//2]:.1f}° |\n")
+            elif indicator_type == "callosal_area":
+                ratios_pct = [r[config['ratio_percent_field']] for r in successful_results]
+                f.write("\n### 統計數據（全部案例）\n\n")
+                f.write("| 指標 | 最小值 | 最大值 | 平均值 | 中位數 |\n")
+                f.write("|------|--------|--------|--------|--------|\n")
+                f.write(f"| {config['ratio_label']} (%) | {min(ratios_pct):.2f} | {max(ratios_pct):.2f} | {sum(ratios_pct)/len(ratios_pct):.2f} | {sorted(ratios_pct)[len(ratios_pct)//2]:.2f} |\n")
             else:
                 # 原有的 distance/ratio 統計
                 distances = [r[config['distance_field']] for r in successful_results]
@@ -294,6 +364,11 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                     f.write("| 指標 | 最小值 | 最大值 | 平均值 | 中位數 |\n")
                     f.write("|------|--------|--------|--------|--------|\n")
                     f.write(f"| {config['angle_label']} | {min(nph_angles):.1f}° | {max(nph_angles):.1f}° | {sum(nph_angles)/len(nph_angles):.1f}° | {sorted(nph_angles)[len(nph_angles)//2]:.1f}° |\n")
+                elif indicator_type == "callosal_area":
+                    nph_ratios_pct = [r[config['ratio_percent_field']] for r in nph_results]
+                    f.write("| 指標 | 最小值 | 最大值 | 平均值 | 中位數 |\n")
+                    f.write("|------|--------|--------|--------|--------|\n")
+                    f.write(f"| {config['ratio_label']} (%) | {min(nph_ratios_pct):.2f} | {max(nph_ratios_pct):.2f} | {sum(nph_ratios_pct)/len(nph_ratios_pct):.2f} | {sorted(nph_ratios_pct)[len(nph_ratios_pct)//2]:.2f} |\n")
                 else:
                     # 原有的 distance/ratio 統計 (centroid_ratio, evan_index, alvi)
                     nph_distances = [r[config['distance_field']] for r in nph_results]
@@ -330,6 +405,11 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                     f.write("| 指標 | 最小值 | 最大值 | 平均值 | 中位數 |\n")
                     f.write("|------|--------|--------|--------|--------|\n")
                     f.write(f"| {config['angle_label']} | {min(non_nph_angles):.1f}° | {max(non_nph_angles):.1f}° | {sum(non_nph_angles)/len(non_nph_angles):.1f}° | {sorted(non_nph_angles)[len(non_nph_angles)//2]:.1f}° |\n")
+                elif indicator_type == "callosal_area":
+                    non_nph_ratios_pct = [r[config['ratio_percent_field']] for r in non_nph_results]
+                    f.write("| 指標 | 最小值 | 最大值 | 平均值 | 中位數 |\n")
+                    f.write("|------|--------|--------|--------|--------|\n")
+                    f.write(f"| {config['ratio_label']} (%) | {min(non_nph_ratios_pct):.2f} | {max(non_nph_ratios_pct):.2f} | {sum(non_nph_ratios_pct)/len(non_nph_ratios_pct):.2f} | {sorted(non_nph_ratios_pct)[len(non_nph_ratios_pct)//2]:.2f} |\n")
                 else:
                     # 原有的 distance/ratio 統計 (centroid_ratio, evan_index, alvi)
                     non_nph_distances = [r[config['distance_field']] for r in non_nph_results]
@@ -384,6 +464,14 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                     angle_diff = nph_angle_mean - non_nph_angle_mean
                     angle_pct = (angle_diff / non_nph_angle_mean) * 100 if non_nph_angle_mean != 0 else 0
                     f.write(f"| **{config['angle_label']}** | **{nph_angle_mean:.1f}°** | **{non_nph_angle_mean:.1f}°** | **{angle_diff:+.1f}°** | **{angle_pct:+.1f}%** |\n")
+                elif indicator_type == "callosal_area":
+                    nph_ratios_pct = [r[config['ratio_percent_field']] for r in nph_results]
+                    non_nph_ratios_pct = [r[config['ratio_percent_field']] for r in non_nph_results]
+                    nph_ratio_mean = sum(nph_ratios_pct) / len(nph_ratios_pct)
+                    non_nph_ratio_mean = sum(non_nph_ratios_pct) / len(non_nph_ratios_pct)
+                    ratio_diff = nph_ratio_mean - non_nph_ratio_mean
+                    ratio_pct = (ratio_diff / non_nph_ratio_mean) * 100 if non_nph_ratio_mean != 0 else 0
+                    f.write(f"| **{config['ratio_label']} (%)** | **{nph_ratio_mean:.2f}** | **{non_nph_ratio_mean:.2f}** | **{ratio_diff:+.2f}** | **{ratio_pct:+.1f}%** |\n")
 
                 else:
                     # 原有的 distance/ratio 組間差異計算
@@ -452,6 +540,16 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                         angle = result.get(config['angle_field'], 0)
                         rank_note = " (最小)" if i == 1 else (" (最大)" if i == len(nph_sorted) else "")
                         f.write(f"| {case_id} | {angle:.1f}° | {i}{rank_note} |\n")
+                elif indicator_type == "callosal_area":
+                    f.write(f"| 案例 ID | {config['ratio_label']} (%) | {config['area_label']} | 排序 |\n")
+                    f.write("|---------|----------------|---------------|------|\n")
+                    nph_sorted = sorted(nph_results, key=lambda x: x[config['ratio_percent_field']], reverse=True)
+                    for i, result in enumerate(nph_sorted, 1):
+                        case_id = result.get('case_id', 'N/A')
+                        ratio_percent = result.get(config['ratio_percent_field'], 0)
+                        area = result.get(config['area_field'], 0)
+                        rank_note = " (最大)" if i == 1 else (" (最小)" if i == len(nph_sorted) else "")
+                        f.write(f"| {case_id} | {ratio_percent:.2f} | {area:.2f} | {i}{rank_note} |\n")
                 else:
                     f.write(f"| 案例 ID | {config['distance_label']} | 顱內寬度 (mm) | {config['ratio_label']} | 百分比 | 排序 |\n")
                     f.write("|---------|---------------|---------------|------|--------|------|\n")
@@ -471,6 +569,9 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                             rank_note = " (最低)"
 
                         f.write(f"| {case_id} | {distance:.2f} | {width:.2f} | {ratio:.4f} | {percent:.2f}% | {i}{rank_note} |\n")
+        elif indicator_type == "callosal_area" and excluded_zero_count > 0:
+            f.write("## 測量結果\n\n")
+            f.write(f"> 所有成功案例皆為 0（共 {excluded_zero_count} 例），已全部排除，不納入統計與 ROC/AUC。\n\n")
 
         # 失敗案例
         failed_results = [r for r in results if r.get('status') == 'error']

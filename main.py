@@ -12,7 +12,7 @@
 import argparse
 from pathlib import Path
 from processors.batch_processor import batch_process
-from processors.case_processor import process_case_indicator_ratio, process_case_evan_index, process_case_surface_area, process_case_volume_surface_ratio, process_case_alvi
+from processors.case_processor import process_case_indicator_ratio, process_case_evan_index, process_case_surface_area, process_case_volume_surface_ratio, process_case_alvi, process_case_callosal_angle, process_case_callosal_area
 
 
 def main():
@@ -28,6 +28,7 @@ def main():
   volume_surface_ratio - 體積與表面積比例（mm，球形度指標）
   alvi                - ALVI (Anteroposterior Lateral Ventricle Index)
   callosal_angle      - 胼胝體角 (Callosal Angle)
+  callosal_area       - Callosal 平面三角形淨面積 (mm²)
 
 使用範例:
   # 批次處理 - 雙資料夾模式（NPH + 非NPH）
@@ -55,7 +56,7 @@ def main():
 
     batch_parser.add_argument(
         '--type', '-t',
-        choices=['centroid_ratio', 'evan_index', 'surface_area', 'volume_surface_ratio', 'alvi', 'callosal_angle'],
+        choices=['centroid_ratio', 'evan_index', 'surface_area', 'volume_surface_ratio', 'alvi', 'callosal_angle', 'callosal_area'],
         default='centroid_ratio',
         help='指標類型（預設: centroid_ratio）'
     )
@@ -110,7 +111,7 @@ def main():
 
     single_parser.add_argument(
         '--type', '-t',
-        choices=['centroid_ratio', 'evan_index', 'surface_area', 'volume_surface_ratio', 'alvi', 'callosal_angle'],
+        choices=['centroid_ratio', 'evan_index', 'surface_area', 'volume_surface_ratio', 'alvi', 'callosal_angle', 'callosal_area'],
         default='centroid_ratio',
         help='指標類型（預設: centroid_ratio）'
     )
@@ -242,16 +243,30 @@ def main():
                 show_plot=args.show_plot,
                 verbose=True
             )
+        elif args.type == 'callosal_angle':
+            result = process_case_callosal_angle(
+                data_dir=str(case_dir),
+                output_image_path=str(output_path),
+                show_plot=args.show_plot,
+                verbose=True
+            )
+        elif args.type == 'callosal_area':
+            result = process_case_callosal_area(
+                data_dir=str(case_dir),
+                output_image_path=str(output_path),
+                show_plot=args.show_plot,
+                verbose=True
+            )
 
         # 顯示結果
         print("\n" + "=" * 70)
-        if result['status'] == 'success':
+        if result['status'] == 'success': # type: ignore
             print("分析完成！")
             print(f"結果圖片: {output_path}")
             print(f"互動式HTML: {output_path.with_suffix('.html')}")
         else:
             print("分析失敗！")
-            print(f"錯誤: {result.get('error_message', '未知錯誤')}")
+            print(f"錯誤: {result.get('error_message', '未知錯誤')}") # type: ignore
         print("=" * 70)
 
 

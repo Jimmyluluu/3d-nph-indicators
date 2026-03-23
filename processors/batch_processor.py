@@ -35,7 +35,7 @@ def scan_data_directory(base_dir, indicator_type, skip_not_ok=True):
     all_dirs = [d for d in base_path.iterdir() if d.is_dir()]
     
     requires_original = indicator_type not in ['surface_area', 'volume_surface_ratio']
-    requires_3rd_ventricle = indicator_type in ['callosal_angle']
+    requires_3rd_ventricle = indicator_type in ['callosal_angle', 'callosal_area']
 
     # 過濾掉隱藏檔案（._ 開頭）和 _not_ok 標記的資料夾
     valid_dirs = []
@@ -180,6 +180,10 @@ def batch_process(data_dir=None, indicator_type="centroid_ratio", skip_not_ok=Tr
         from processors.case_processor import process_case_callosal_angle
         process_func = lambda data_dir, output_path, show_plot=False, verbose=True: process_case_callosal_angle(data_dir, output_path, show_plot=show_plot, verbose=verbose)
         indicator_name = "Callosal Angle (胼胝體角)"
+    elif indicator_type == "callosal_area":
+        from processors.case_processor import process_case_callosal_area
+        process_func = lambda data_dir, output_path, show_plot=False, verbose=True: process_case_callosal_area(data_dir, output_path, show_plot=show_plot, verbose=verbose)
+        indicator_name = "Callosal 平面三角形面積"
     else:
         raise ValueError(f"不支援的指標類型: {indicator_type}")
 
@@ -293,6 +297,11 @@ def batch_process(data_dir=None, indicator_type="centroid_ratio", skip_not_ok=Tr
                         logger.info(f"     腦室前後徑: {result['ventricle_ap_diameter_mm']:.2f} mm")
                         logger.info(f"     顱骨前後徑: {result['skull_ap_diameter_mm']:.2f} mm")
                         logger.info(f"     ALVI: {result['alvi']:.4f} ({result['alvi_percent']:.2f}%)")
+                    elif indicator_type == "callosal_angle":
+                        logger.info(f"     Callosal Angle: {result['angle']:.2f}°")
+                    elif indicator_type == "callosal_area":
+                        logger.info(f"     淨面積占比: {result['net_triangle_ratio_percent']:.2f}%")
+                        logger.info(f"     扣除後淨面積: {result['net_triangle_area_mm2']:.2f} mm²")
 
                     logger.info(f"     處理時間: {processing_time:.1f}s")
                 else:
@@ -454,6 +463,27 @@ def batch_process(data_dir=None, indicator_type="centroid_ratio", skip_not_ok=Tr
                 ca_roc_path = output_path / ca_roc_filename
                 analyzer.generate_roc_curve(str(ca_roc_path))
                 logger.success(f"Callosal Angle ROC 曲線已生成: {ca_roc_path}")
+
+            except Exception as e:
+                logger.error(f"進階分析執行失敗: {str(e)}", e)
+
+        # 如果是 callosal_area，自動執行進階分析與 ROC 曲線
+        if indicator_type == "callosal_area":
+            try:
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+
+                logger.info("\n執行 Callosal 平面淨面積進階分析...")
+                analyzer = create_analyzer('callosal_area', str(md_path))
+
+                area_analysis_filename = f'callosal_area_analysis_{timestamp}.md'
+                area_analysis_path = output_path / area_analysis_filename
+                analyzer.generate_report(str(area_analysis_path))
+                logger.success(f"Callosal 平面淨面積分析報告已生成: {area_analysis_path}")
+
+                area_roc_filename = f'callosal_area_roc_{timestamp}.png'
+                area_roc_path = output_path / area_roc_filename
+                analyzer.generate_roc_curve(str(area_roc_path))
+                logger.success(f"Callosal 平面淨面積 ROC 曲線已生成: {area_roc_path}")
 
             except Exception as e:
                 logger.error(f"進階分析執行失敗: {str(e)}", e)

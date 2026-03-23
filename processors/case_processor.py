@@ -19,12 +19,14 @@ from model.evan_analyzer import (
 )
 from model.alvi_analyzer import calculate_alvi
 from model.callosal_angle_analyzer import calculate_callosal_angle
+from model.callosal_area_analyzer import calculate_callosal_area
 from model.visualization import (
     visualize_ventricle_distance,
     visualize_3d_evan_index,
     visualize_volume_surface_ratio,
     visualize_alvi,
     visualize_callosal_angle,
+    visualize_callosal_area,
 )
 
 from processors.printers import (
@@ -549,6 +551,66 @@ def process_case_callosal_angle(data_dir, output_image_path, show_plot=False, ve
             'center_point': list(angle_data['center_point']),
             'left_highest_point': list(angle_data['left_highest_point']),
             'right_highest_point': list(angle_data['right_highest_point'])
+        }
+
+    except Exception as e:
+        return {
+            'status': 'error',
+            'error_message': str(e),
+            'error_type': type(e).__name__
+        }
+
+
+def process_case_callosal_area(data_dir, output_image_path, show_plot=False, verbose=True):
+    """處理單一案例 - Callosal 平面三角形面積。"""
+    try:
+        files = find_case_files(data_dir, require_original=True, require_falx=True, require_3rd_ventricle=True)
+        left_path = files['left_path']
+        right_path = files['right_path']
+        original_path = files['original_path']
+        falx_path = files['falx_path']
+        third_vent_path = files['third_vent_path']
+
+        left_vent, right_vent = load_ventricle_pair(
+            str(left_path), str(right_path), verbose=verbose
+        )
+        original_img = load_original_image(str(original_path), verbose=verbose)
+
+        from model.calculation import load_falx_image, load_3rd_ventricle_image
+        falx_img = load_falx_image(str(falx_path), verbose=verbose)
+        third_vent_img = load_3rd_ventricle_image(str(third_vent_path), verbose=verbose)
+
+        area_data = calculate_callosal_area(
+            left_vent, right_vent, third_vent_img,
+            falx_img=falx_img,
+            verbose=verbose
+        )
+
+        visualize_callosal_area(
+            left_vent, right_vent, third_vent_img, original_img,
+            area_data,
+            output_path=str(output_image_path),
+            show_plot=show_plot
+        )
+
+        return {
+            'status': 'success',
+            'net_triangle_ratio': area_data['net_triangle_ratio'],
+            'net_triangle_ratio_percent': area_data['net_triangle_ratio_percent'],
+            'net_triangle_area_mm2': area_data['net_triangle_area_mm2'],
+            'triangle_area_mm2': area_data['triangle_area_mm2'],
+            'left_in_triangle_area_mm2': area_data['left_in_triangle_area_mm2'],
+            'right_in_triangle_area_mm2': area_data['right_in_triangle_area_mm2'],
+            'left_right_overlap_area_mm2': area_data['left_right_overlap_area_mm2'],
+            'left_third_overlap_area_mm2': area_data['left_third_overlap_area_mm2'],
+            'right_third_overlap_area_mm2': area_data['right_third_overlap_area_mm2'],
+            'triple_overlap_area_mm2': area_data['triple_overlap_area_mm2'],
+            'lateral_overlap_area_mm2': area_data['lateral_overlap_area_mm2'],
+            'third_overlap_area_mm2': area_data['third_overlap_area_mm2'],
+            'center_point': list(area_data['center_point']),
+            'third_centroid': list(area_data['third_centroid']),
+            'left_highest_point': list(area_data['left_highest_point']),
+            'right_highest_point': list(area_data['right_highest_point'])
         }
 
     except Exception as e:

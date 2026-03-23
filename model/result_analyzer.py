@@ -92,6 +92,22 @@ INDICATOR_CONFIGS = {
         'normal_range': (100.0, 120.0),  # 正常範圍（文獻）
         'nph_range': (50.0, 80.0),       # iNPH 典型範圍（文獻）
         'direction': 'down',             # 數值越小，越可能是 NPH
+    },
+    'callosal_area': {
+        'name': 'Callosal Net Area Ratio',
+        'full_name': 'Callosal Plane Net Area Ratio',
+        # 僅解析第一個主欄位（淨面積占比 %），其餘欄位可在報表檢視
+        # 範例：| data_1 | 82.43% | ... | 1.25s |
+        'pattern': r'\| ([^\|]+) \| ([\d.]+)% \| .* \| [\d.]+s \|',
+        'fields': ['case_id', 'net_area_ratio_percent'],
+        'primary_field': 'net_area_ratio_percent',
+        'threshold': None,
+        'threshold_range': None,
+        'outlier_threshold': None,
+        'min_valid_value': 1e-9,
+        'unit': '%',
+        'report_title': 'Callosal 平面淨面積占比分析報告',
+        'direction': 'up',
     }
 }
 
