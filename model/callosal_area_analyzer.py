@@ -510,7 +510,7 @@ def calculate_callosal_area(left_vent, right_vent, third_vent, falx_img, verbose
             f"({third_centroid[0]:.2f}, {third_centroid[1]:.2f}, {third_centroid[2]:.2f}) mm"
         )
         print(
-            f"  三角形第三頂點（Angle Vertex）: "
+            f"  三角形第三頂點（三腦室質心）: "
             f"({third_vertex[0]:.2f}, {third_vertex[1]:.2f}, {third_vertex[2]:.2f}) mm"
         )
         print(f"  左腦室截面點數: {len(left_section)}")

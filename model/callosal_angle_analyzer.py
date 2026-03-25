@@ -73,7 +73,7 @@ def calculate_callosal_angle(left_vent, right_vent, third_vent, falx_img, verbos
 
         if verbose:
             print(
-                f"  角度頂點（擬合線交點）: "
+                f"  角度頂點（三腦室質心）: "
                 f"({vertex[0]:.2f}, {vertex[1]:.2f}, {vertex[2]:.2f}) mm"
             )
             if angle_method == "vertex_anchor":

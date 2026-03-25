@@ -249,17 +249,12 @@ def compute_callosal_geometry(left_vent, right_vent, third_vent, falx_img, verbo
     right_wall_center = None
     left_dir = None
     right_dir = None
-    vertex = pc_anchor
+    # 依最新需求：第三頂點固定使用三腦室質心，不使用左右壁延伸交點
+    vertex = np.asarray(third_centroid, dtype=float)
 
     if len(left_section) > 0 and len(right_section) > 0:
-        result = compute_angle_vertex(left_section, right_section)
-        if result is not None:
-            vertex, left_dir, right_dir = result
-            left_wall_center = fit_medial_wall_line(left_section, 'left')[0]
-            right_wall_center = fit_medial_wall_line(right_section, 'right')[0]
-
-    # 幾何一致化：將 vertex 投影回冠狀測量平面，避免數值誤差偏離
-    vertex = project_points_to_plane(np.asarray([vertex], dtype=float), coronal_plane)[0]
+        left_wall_center, left_dir = fit_medial_wall_line(left_section, 'left')
+        right_wall_center, right_dir = fit_medial_wall_line(right_section, 'right')
 
     return {
         'pc_anchor': pc_anchor,
