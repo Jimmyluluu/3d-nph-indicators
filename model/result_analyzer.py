@@ -7,7 +7,6 @@
 import re
 import os
 import datetime
-import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve, auc
 
@@ -53,13 +52,13 @@ INDICATOR_CONFIGS = {
         'name': 'Surface Area',
         'full_name': 'Ventricle Surface Area',
         # 從合併表格提取：| 案例 ID | 左體積 | 右體積 | 總體積 | V/SA比例 | 時間 |
-        # 注意：表面積需要從體積和比例反推，這裡暫時使用體積資料
+        # 表面積由 total_volume / ratio 反推
         'pattern': r'\| ([^\|]+) \| ([\d.]+) \| ([\d.]+) \| ([\d.]+) \| ([\d.]+) \| [\d.]+s \|',
         'fields': ['case_id', 'left_volume', 'right_volume', 'total_volume', 'ratio'],
-        'primary_field': 'total_volume',  # 暫時使用總體積作為主要欄位
+        'primary_field': 'surface_area',
         'threshold': None,
         'outlier_threshold': None,
-        'unit': 'mm³',  # 實際上是體積單位
+        'unit': 'mm²',
         'report_title': '腦室表面積分析報告',
     },
     'ventricle_volume': {
@@ -165,6 +164,15 @@ class BaseResultAnalyzer:
                     data_dict[field] = case_id
                 else:
                     data_dict[field] = float(match[i])
+
+            # 特例：surface_area 由 total_volume / ratio 反推
+            if self.indicator_type == 'surface_area':
+                ratio = data_dict.get('ratio', 0.0)
+                total_volume = data_dict.get('total_volume', 0.0)
+                if ratio <= 0:
+                    self.abnormal_cases.append((case_id, ratio))
+                    continue
+                data_dict['surface_area'] = total_volume / ratio
             
             # 獲取主要欄位值（用於 ROC 和過濾）
             primary_value = data_dict[self.config['primary_field']]
@@ -277,34 +285,10 @@ class BaseResultAnalyzer:
         fpr, tpr, thresholds_roc = roc_curve(y_true, y_scores_for_roc)
         roc_auc = auc(fpr, tpr)
         
-        # 如果反轉了分數，把閾值還原成正的以利標示
-        if direction == 'down':
-            thresholds_actual = -thresholds_roc
-        else:
-            thresholds_actual = thresholds_roc
-        
         # 繪製
         plt.figure(figsize=(10, 8))
         plt.plot(fpr, tpr, color='#10b981', lw=3, label=f'ROC curve (AUC = {roc_auc:.3f})')
         plt.plot([0, 1], [0, 1], color='#94a3b8', lw=2, linestyle='--', label='Random classifier')
-        
-        # 標記關鍵閾值點（如果有定義閾值範圍）
-        threshold_range = self.config.get('threshold_range')
-        if threshold_range and len(threshold_range) >= 3:
-            # 取中間 3 個閾值作為關鍵點
-            mid_idx = len(threshold_range) // 2
-            key_thresholds = threshold_range[mid_idx-1:mid_idx+2]
-            
-            for thresh in key_thresholds:
-                # 找到最接近 threshold 的點
-                idx = (np.abs(thresholds_actual - thresh)).argmin()
-                
-                plt.scatter(fpr[idx], tpr[idx], s=150, zorder=5, edgecolors='white', linewidth=2)
-                plt.annotate(f'{thresh:.2f}\n(Sens:{tpr[idx]:.0%}, Spec:{1-fpr[idx]:.0%})', 
-                             xy=(fpr[idx], tpr[idx]),  # type: ignore
-                             xytext=(fpr[idx]+0.05, tpr[idx]-0.1), # type: ignore
-                             fontsize=10, fontweight='bold',
-                             arrowprops=dict(arrowstyle='->', color='#64748b'))
         
         plt.xlim([0.0, 1.0])
         plt.ylim([0.0, 1.05])
