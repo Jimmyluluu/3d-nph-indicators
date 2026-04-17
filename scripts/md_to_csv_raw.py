@@ -40,6 +40,12 @@ def parse_markdown_table(filepath: str) -> list[dict]:
     return results
 
 
+def parse_angle_deg(raw_value: str) -> float:
+    """將角度字串（例如 '29.3°'）轉為 float。"""
+    cleaned = raw_value.replace('°', '').strip()
+    return float(cleaned)
+
+
 def main():
     base = Path(__file__).parent.parent / 'result'
 
@@ -71,6 +77,26 @@ def main():
             'total_surface_area_mm2': round(total_vol / vsa_ratio, 1) if vsa_ratio > 0 else 0,
         }
 
+    # === 解析 Callosal Angle (非必要欄位) ===
+    callosal_data = {}
+    callosal_path = base / 'callosal_angle' / 'results_summary.md'
+    if callosal_path.exists():
+        for row in parse_markdown_table(callosal_path):
+            try:
+                angle = parse_angle_deg(row['cells'][1])
+                if angle == 0.0:
+                    # 視為缺值，後續回填 NaN
+                    continue
+                callosal_data[row['case_id']] = {
+                    'callosal_angle_deg': angle,
+                }
+            except (ValueError, IndexError):
+                # 角度解析失敗視為缺值，後續回填 NaN
+                continue
+    else:
+        print(f"⚠️ 找不到 Callosal Angle 報表: {callosal_path}")
+        print("   將以 NaN 填入 callosal_angle_deg")
+
     # === 合併 ===
     all_case_ids = sorted(alvi_data.keys())
 
@@ -87,6 +113,7 @@ def main():
         'left_ventricle_volume_mm3',
         'right_ventricle_volume_mm3',
         'total_surface_area_mm2',
+        'callosal_angle_deg',
     ]
 
     rows_written = 0
@@ -105,6 +132,12 @@ def main():
 
             evan = evan_data[cid]
             vsr = vsr_data[cid]
+            callosal = callosal_data.get(cid)
+
+            if callosal is None:
+                callosal = {
+                    'callosal_angle_deg': float('nan'),
+                }
 
             row = {
                 'case_id': cid,
@@ -112,6 +145,7 @@ def main():
                 **{k: v for k, v in alvi.items() if k != 'is_nph'},
                 **evan,
                 **vsr,
+                **callosal,
             }
             writer.writerow(row)
             rows_written += 1
