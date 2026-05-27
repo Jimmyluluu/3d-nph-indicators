@@ -9,9 +9,7 @@
   - Ventricle Volume
   - Surface Area（從 V/SA Ratio 與 Volume 反推）
   - Volume / Surface Area Ratio
-
-暫停啟用：
-  - Callosal Angle（需確認資料後再啟用）
+  - Callosal Angle
 """
 
 import re
@@ -44,7 +42,7 @@ INDICATORS_TO_LOAD = [
     ('ventricle_volume',     _VS_PATH),
     ('surface_area_derived', _VS_PATH),   # 特殊：反推 surface area = total_volume / ratio
     ('volume_surface_ratio', _VS_PATH),
-    # ('callosal_angle', os.path.join(RESULT_DIR, 'callosal_angle', 'results_summary.md')),  # 暫時停用
+    ('callosal_angle',       os.path.join(RESULT_DIR, 'callosal_angle', 'results_summary.md')),
 ]
 
 # 各指標顯示設定
@@ -54,7 +52,7 @@ INDICATOR_STYLES = {
     'ventricle_volume':     {'label': 'Volume',        'color': '#f59e0b'},
     'surface_area_derived': {'label': 'Surface Area',  'color': '#8b5cf6'},
     'volume_surface_ratio': {'label': 'V/SA Ratio',    'color': '#10b981'},
-    # 'callosal_angle':     {'label': 'Callosal Angle','color': '#ec4899'},  # 暫時停用
+    'callosal_angle':       {'label': 'Callosal Angle','color': '#ec4899'},
 }
 
 
@@ -233,7 +231,7 @@ def generate_combined_roc(output_path: str | None = None) -> str:
     ax.set_ylabel('True Positive Rate  (Sensitivity)', fontsize=13)
     ax.set_title(
         'Combined ROC Curves — NPH Indicators\n'
-        'ALVI  ·  Evan Index  ·  Volume  ·  Surface Area  ·  V/SA Ratio',
+        'ALVI  ·  Evan Index  ·  Volume  ·  Surface Area  ·  V/SA Ratio  ·  Callosal Angle',
         fontsize=14, fontweight='bold', pad=14,
     )
     ax.legend(loc='lower right', fontsize=11, framealpha=0.92)

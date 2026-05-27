@@ -299,10 +299,10 @@ flowchart TD
     C --> F[建立冠狀切面\n以 PC 錨點為通過點]
     E --> F
     F --> G[切取左右腦室截面\n厚度 ±2mm]
-    G --> H[左右各自取內側半邊點群\nSVD 擬合 medial wall 方向]
-    H --> I[兩條擬合線延伸\n求 3D 最近交點作為頂點]
-    I --> J[left_dir 與 right_dir\n點積求夾角]
-    D --> J
+    G --> H[左右各自取內側半邊點群\n取得內側錨點並 SVD 擬合 medial wall 方向]
+    D --> I[三腦室質心作為角度頂點 vertex]
+    H --> J[vertex 到左右內側錨點\n向量夾角]
+    I --> J
 ```
 
 ---
@@ -418,33 +418,40 @@ def fit_medial_wall_line(section, side):
 
 ### 5. 計算胼胝體角 (Callosal Angle)
 
-將左右兩側擬合出的**內側壁方向延伸，求其 3D 最近交點作為角度「頂點」**。
+目前實作將**三腦室質心**作為角度「頂點」(`vertex`)；左右兩側的量角點則來自各自截面內側壁的最高 10% 點群中，最靠內側的錨點。
 
-接著直接利用左右側擬合方向向量求兩者夾角：
+主算法使用 `vertex -> left_anchor` 與 `vertex -> right_anchor` 兩條向量的夾角，讓角度數值與視覺化中畫出的折線一致：
 
 ```python
-# 左右腦室分別獲得出發點與下方向量
+# 左右腦室分別獲得內側錨點與下方向量
 left_anchor, left_dir = fit_medial_wall_line(left_section, 'left')
 right_anchor, right_dir = fit_medial_wall_line(right_section, 'right')
 
-# 取兩條擬合線 3D 交點為幾何頂點（可做後續視覺化參考）
-vertex = find_line_intersection_3d(left_anchor, left_dir, right_anchor, right_dir)
+# 目前實作以三腦室質心作為角度頂點
+vertex = third_centroid
 
-# 兩條擬合線的夾角即為 Callosal Angle
-dot_product = np.clip(np.dot(left_dir, right_dir), -1, 1)
+# 優先使用與視覺化一致的 vertex -> 左右錨點向量夾角
+left_vec = left_anchor - vertex
+right_vec = right_anchor - vertex
+left_unit = left_vec / np.linalg.norm(left_vec)
+right_unit = right_vec / np.linalg.norm(right_vec)
+dot_product = np.clip(np.dot(left_unit, right_unit), -1, 1)
 angle = np.degrees(np.arccos(dot_product))
 ```
 
 ```text
        corpus callosum
- left_dir ↗  θ  ↖ right_dir
+ left_anchor ↗  θ  ↖ right_anchor
          /       \
 [ L ventricle ] [ R ventricle ]
-   ↑ medial wall   medial wall ↑
-      (Max X)         (Min X)
+    ↑ medial wall   medial wall ↑
+       (Max X)         (Min X)
+          \       /
+             vertex
+      (third ventricle centroid)
 ```
 
-**降級機制**: 若截面點群全空或無法求得交點，將自動退回使用 PC 錨點作為頂點參考，角度為 0.0。
+**降級機制**: 若左右錨點向量無法計算，才退回使用 `left_dir` / `right_dir` 方向向量點積求角；若截面點群全空或方向向量也不可用，角度為 0.0。若無有效截面，`vertex` 會保留 PC 近似錨點作為參考點。
 
 ---
 ## 腦室體積與表面積 (Ventricle Volume & Surface Area)
