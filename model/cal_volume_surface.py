@@ -5,7 +5,7 @@
 """
 
 import numpy as np
-from model.image_processing import extract_surface_mesh
+from model.image_processing import extract_surface_mesh, get_image_data, get_voxel_size
 
 
 def calculate_surface_area(left_ventricle, right_ventricle, verbose=True):
@@ -185,4 +185,115 @@ def calculate_volume_surface_ratio(left_ventricle, right_ventricle, verbose=True
         'right_surface_area': right_surface_area,
         'total_surface_area': total_surface_area,
         'total_ratio': total_ratio
+    }
+
+
+def calculate_csf_minus_ventricle(csf_img, left_ventricle, right_ventricle,
+                                  third_ventricle, fourth_ventricle, verbose=True):
+    """
+    計算腦室外 CSF 體積。
+
+    使用 mask 聯集扣除，避免左右腦室、三腦室、四腦室之間重疊時重複扣除。
+
+    Args:
+        csf_img: CSF mask 影像物件
+        left_ventricle: 左腦室 mask 影像物件
+        right_ventricle: 右腦室 mask 影像物件
+        third_ventricle: 三腦室 mask 影像物件
+        fourth_ventricle: 四腦室 mask 影像物件
+        verbose (bool): 是否顯示計算過程資訊
+
+    Returns:
+        dict: 包含 CSF、各腦室、腦室聯集與扣除後體積
+    """
+    csf_voxel_size = get_voxel_size(csf_img)
+    csf_voxel_volume = float(np.prod(csf_voxel_size))
+
+    def _mask_volume(mask, image_obj):
+        return float(np.count_nonzero(mask) * np.prod(get_voxel_size(image_obj)))
+
+    def _project_mask_to_csf_grid(mask, image_obj, name):
+        """將任意 shape 的 mask 依 affine 放回 CSF grid。"""
+        coords = np.argwhere(mask)
+        projected = np.zeros(csf_img.shape, dtype=bool)
+
+        if len(coords) == 0:
+            return projected, 0
+
+        homogeneous = np.column_stack([coords, np.ones(len(coords))])
+        physical_coords = (image_obj.affine @ homogeneous.T).T[:, :3]
+
+        inverse_csf_affine = np.linalg.inv(csf_img.affine)
+        csf_homogeneous = np.column_stack([physical_coords, np.ones(len(physical_coords))])
+        csf_voxels = (inverse_csf_affine @ csf_homogeneous.T).T[:, :3]
+        csf_indices = np.rint(csf_voxels).astype(int)
+
+        in_bounds = (
+            (csf_indices[:, 0] >= 0) & (csf_indices[:, 0] < csf_img.shape[0]) &
+            (csf_indices[:, 1] >= 0) & (csf_indices[:, 1] < csf_img.shape[1]) &
+            (csf_indices[:, 2] >= 0) & (csf_indices[:, 2] < csf_img.shape[2])
+        )
+
+        valid_indices = csf_indices[in_bounds]
+        if len(valid_indices) > 0:
+            projected[valid_indices[:, 0], valid_indices[:, 1], valid_indices[:, 2]] = True
+
+        dropped_count = int(len(coords) - len(valid_indices))
+        if verbose and dropped_count > 0:
+            print(f"  注意: {name} 有 {dropped_count} 個體素投影後超出 CSF 範圍，已忽略")
+
+        return projected, dropped_count
+
+    csf_mask = get_image_data(csf_img) > 0
+    left_mask = get_image_data(left_ventricle) > 0
+    right_mask = get_image_data(right_ventricle) > 0
+    third_mask = get_image_data(third_ventricle) > 0
+    fourth_mask = get_image_data(fourth_ventricle) > 0
+
+    if not np.any(csf_mask):
+        raise ValueError("CSF mask 沒有有效體素")
+
+    left_on_csf, left_dropped = _project_mask_to_csf_grid(left_mask, left_ventricle, "左腦室")
+    right_on_csf, right_dropped = _project_mask_to_csf_grid(right_mask, right_ventricle, "右腦室")
+    third_on_csf, third_dropped = _project_mask_to_csf_grid(third_mask, third_ventricle, "三腦室")
+    fourth_on_csf, fourth_dropped = _project_mask_to_csf_grid(fourth_mask, fourth_ventricle, "四腦室")
+
+    ventricle_union_mask = left_on_csf | right_on_csf | third_on_csf | fourth_on_csf
+    csf_minus_ventricle_mask = csf_mask & ~ventricle_union_mask
+
+    csf_volume = float(np.count_nonzero(csf_mask) * csf_voxel_volume)
+    left_volume = _mask_volume(left_mask, left_ventricle)
+    right_volume = _mask_volume(right_mask, right_ventricle)
+    third_volume = _mask_volume(third_mask, third_ventricle)
+    fourth_volume = _mask_volume(fourth_mask, fourth_ventricle)
+    ventricle_union_volume = float(np.count_nonzero(ventricle_union_mask) * csf_voxel_volume)
+    csf_minus_ventricle_volume = float(np.count_nonzero(csf_minus_ventricle_mask) * csf_voxel_volume)
+
+    if verbose:
+        from processors.printers import print_csf_minus_ventricle_summary
+        print_csf_minus_ventricle_summary({
+            'csf_volume': csf_volume,
+            'left_ventricle_volume': left_volume,
+            'right_ventricle_volume': right_volume,
+            'third_ventricle_volume': third_volume,
+            'fourth_ventricle_volume': fourth_volume,
+            'ventricle_union_volume': ventricle_union_volume,
+            'csf_minus_ventricle_volume': csf_minus_ventricle_volume,
+        }, verbose=verbose)
+
+    return {
+        'csf_volume': csf_volume,
+        'left_ventricle_volume': left_volume,
+        'right_ventricle_volume': right_volume,
+        'third_ventricle_volume': third_volume,
+        'fourth_ventricle_volume': fourth_volume,
+        'ventricle_union_volume': ventricle_union_volume,
+        'csf_minus_ventricle_volume': csf_minus_ventricle_volume,
+        'voxel_size': tuple(csf_voxel_size),
+        'dropped_voxels': {
+            'left_ventricle': left_dropped,
+            'right_ventricle': right_dropped,
+            'third_ventricle': third_dropped,
+            'fourth_ventricle': fourth_dropped,
+        }
     }

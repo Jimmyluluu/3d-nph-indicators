@@ -12,7 +12,7 @@
 import argparse
 from pathlib import Path
 from processors.batch_processor import batch_process
-from processors.case_processor import process_case_indicator_ratio, process_case_evan_index, process_case_surface_area, process_case_volume_surface_ratio, process_case_alvi, process_case_callosal_angle, process_case_callosal_area
+from processors.case_processor import process_case_indicator_ratio, process_case_evan_index, process_case_surface_area, process_case_volume_surface_ratio, process_case_alvi, process_case_callosal_angle, process_case_callosal_area, process_case_csf_minus_ventricle
 
 
 def main():
@@ -26,6 +26,7 @@ def main():
   evan_index          - 腦室前腳最大距離/顱內寬度比值（3D Evan Index）
   surface_area        - 腦室表面積（mm^2）
   volume_surface_ratio - 體積與表面積比例（mm，球形度指標）
+  csf_minus_ventricle - 腦室外 CSF 體積（mm³）
   alvi                - ALVI (Anteroposterior Lateral Ventricle Index)
   callosal_angle      - 胼胝體角 (Callosal Angle)
   callosal_area       - Callosal 平面三角形淨面積 (mm²)
@@ -56,7 +57,7 @@ def main():
 
     batch_parser.add_argument(
         '--type', '-t',
-        choices=['centroid_ratio', 'evan_index', 'surface_area', 'volume_surface_ratio', 'alvi', 'callosal_angle', 'callosal_area'],
+        choices=['centroid_ratio', 'evan_index', 'surface_area', 'volume_surface_ratio', 'csf_minus_ventricle', 'alvi', 'callosal_angle', 'callosal_area'],
         default='centroid_ratio',
         help='指標類型（預設: centroid_ratio）'
     )
@@ -111,7 +112,7 @@ def main():
 
     single_parser.add_argument(
         '--type', '-t',
-        choices=['centroid_ratio', 'evan_index', 'surface_area', 'volume_surface_ratio', 'alvi', 'callosal_angle', 'callosal_area'],
+        choices=['centroid_ratio', 'evan_index', 'surface_area', 'volume_surface_ratio', 'csf_minus_ventricle', 'alvi', 'callosal_angle', 'callosal_area'],
         default='centroid_ratio',
         help='指標類型（預設: centroid_ratio）'
     )
@@ -231,6 +232,13 @@ def main():
             )
         elif args.type == 'volume_surface_ratio':
             result = process_case_volume_surface_ratio(
+                data_dir=str(case_dir),
+                output_image_path=str(output_path),
+                show_plot=args.show_plot,
+                verbose=True
+            )
+        elif args.type == 'csf_minus_ventricle':
+            result = process_case_csf_minus_ventricle(
                 data_dir=str(case_dir),
                 output_image_path=str(output_path),
                 show_plot=args.show_plot,

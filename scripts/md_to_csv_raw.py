@@ -1,5 +1,5 @@
 """
-解析 ALVI、Evan Index、Volume/Surface Ratio 的 results_summary.md
+解析 ALVI、Evan Index、Volume/Surface Ratio、腦室外 CSF 體積的 results_summary.md
 合併成 CSV 供 MLP / KAN 模型訓練使用
 
 此版本不擷取 alvi 和 evan_index 比值，只保留原始測量值
@@ -9,9 +9,10 @@
 import re
 import csv
 from pathlib import Path
+from typing import Union
 
 
-def parse_markdown_table(filepath: str) -> list[dict]:
+def parse_markdown_table(filepath: Union[str, Path]) -> list[dict]:
     """解析 markdown 報表中的測量結果表格"""
     text = Path(filepath).read_text(encoding='utf-8')
 
@@ -97,6 +98,13 @@ def main():
         print(f"⚠️ 找不到 Callosal Angle 報表: {callosal_path}")
         print("   將以 NaN 填入 callosal_angle_deg")
 
+    # === 解析腦室外 CSF 體積 ===
+    csf_data = {}
+    for row in parse_markdown_table(base / 'csf_minus_ventricle' / 'results_summary.md'):
+        csf_data[row['case_id']] = {
+            'extra_ventricular_csf_volume_mm3': float(row['cells'][3]),
+        }
+
     # === 合併 ===
     all_case_ids = sorted(alvi_data.keys())
 
@@ -114,6 +122,7 @@ def main():
         'right_ventricle_volume_mm3',
         'total_surface_area_mm2',
         'callosal_angle_deg',
+        'extra_ventricular_csf_volume_mm3',
     ]
 
     rows_written = 0
@@ -126,13 +135,14 @@ def main():
         for cid in all_case_ids:
             alvi = alvi_data[cid]
 
-            if cid not in evan_data or cid not in vsr_data:
+            if cid not in evan_data or cid not in vsr_data or cid not in csf_data:
                 skipped.append(cid)
                 continue
 
             evan = evan_data[cid]
             vsr = vsr_data[cid]
             callosal = callosal_data.get(cid)
+            csf = csf_data[cid]
 
             if callosal is None:
                 callosal = {
@@ -146,6 +156,7 @@ def main():
                 **evan,
                 **vsr,
                 **callosal,
+                **csf,
             }
             writer.writerow(row)
             rows_written += 1

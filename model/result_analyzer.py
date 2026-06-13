@@ -73,6 +73,18 @@ INDICATOR_CONFIGS = {
         'unit': 'mm³',
         'report_title': '腦室體積分析報告',
     },
+    'csf_minus_ventricle': {
+        'name': 'Extra-ventricular CSF Volume',
+        'full_name': 'Extra-ventricular CSF Volume',
+        # 從表格提取：| 案例 ID | CSF 體積 | 腦室聯集體積 | 腦室外 CSF 體積 | 時間 |
+        'pattern': r'\| ([^\|]+) \| ([\d.]+) \| ([\d.]+) \| ([\d.]+) \| [\d.]+s \|',
+        'fields': ['case_id', 'csf_volume', 'ventricle_union_volume', 'csf_minus_ventricle_volume'],
+        'primary_field': 'csf_minus_ventricle_volume',
+        'threshold': None,
+        'outlier_threshold': None,
+        'unit': 'mm³',
+        'report_title': '腦室外 CSF 體積分析報告',
+    },
     'callosal_angle': {
         'name': 'Callosal Angle',
         'full_name': 'Callosal Angle',

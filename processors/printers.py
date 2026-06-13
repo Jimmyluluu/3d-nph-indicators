@@ -241,6 +241,22 @@ def print_volume_surface_ratio_start(verbose=True):
         print(f"\n計算體積與表面積比例...")
 
 
+def print_csf_minus_ventricle_summary(csf_data, verbose=True):
+    """輸出腦室外 CSF 體積的計算總結。"""
+    if not verbose:
+        return
+
+    print("\n腦室外 CSF 體積計算總結:")
+    print(f"  CSF 體積: {csf_data['csf_volume']:.2f} mm³")
+    print("  腦室體積:")
+    print(f"    左腦室: {csf_data['left_ventricle_volume']:.2f} mm³")
+    print(f"    右腦室: {csf_data['right_ventricle_volume']:.2f} mm³")
+    print(f"    三腦室: {csf_data['third_ventricle_volume']:.2f} mm³")
+    print(f"    四腦室: {csf_data['fourth_ventricle_volume']:.2f} mm³")
+    print(f"  腦室聯集體積: {csf_data['ventricle_union_volume']:.2f} mm³")
+    print(f"  腦室外 CSF 體積: {csf_data['csf_minus_ventricle_volume']:.2f} mm³")
+
+
 def print_sampling_info(side, original_count, sampled_count, verbose=True):
     """
     輸出點雲降採樣資訊

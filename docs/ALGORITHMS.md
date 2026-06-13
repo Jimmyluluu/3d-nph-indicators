@@ -1,6 +1,6 @@
 # NPH 診斷指標算法說明
 
-本文檔詳細說明用於正常壓力水腦症 (Normal Pressure Hydrocephalus, NPH) 診斷的 3D 影像分析指標：**ALVI**、**Evan Index**、**Callosal Angle** 與 **腦室體積**。
+本文檔詳細說明用於正常壓力水腦症 (Normal Pressure Hydrocephalus, NPH) 診斷的 3D 影像分析指標：**ALVI**、**Evan Index**、**Callosal Angle**、**腦室體積** 與 **腦室外 CSF 體積**。
 
 ---
 
@@ -10,7 +10,8 @@
 2. [Evan Index (3D)](#evan-index-3d)
 3. [Callosal Angle (胼胝體角)](#callosal-angle-胼胝體角)
 4. [腦室體積與表面積](#腦室體積與表面積-ventricle-volume--surface-area)
-5. [共用計算模組](#共用計算模組)
+5. [腦室外 CSF 體積](#腦室外-csf-體積-extra-ventricular-csf-volume)
+6. [共用計算模組](#共用計算模組)
 
 ---
 
@@ -560,6 +561,147 @@ total_volume = left_volume + right_volume          # mm³
 total_surface_area = left_surface_area + right_surface_area  # mm²
 total_ratio = total_volume / total_surface_area    # mm
 ```
+
+---
+
+## 腦室外 CSF 體積 (Extra-ventricular CSF Volume)
+
+### 定義
+
+腦室外 CSF 體積為「全 CSF mask」扣除所有腦室 mask 後剩餘的 CSF 體積。
+
+```text
+腦室外 CSF 體積 = CSF 體積 - union(左側腦室, 右側腦室, 三腦室, 四腦室)
+```
+
+此指標對應 `csf_minus_ventricle`，但報表與 CSV 特徵中以更清楚的名稱表示：
+
+```text
+extra_ventricular_csf_volume_mm3
+```
+
+### 💡 白話文總結
+
+> **「先把所有腦脊髓液找出來，再把左右側腦室、三腦室、四腦室占掉的部分扣掉，剩下就是腦室外 CSF。」**
+
+---
+
+### 算法流程
+
+```mermaid
+flowchart TD
+    A[載入 CSF 與四個腦室 mask] --> B[全部拉正到 RAS+]
+    B --> C[CSF 作為 reference grid]
+    B --> D[各腦室 mask 依 affine 投影回 CSF grid]
+    D --> E[四個腦室在 CSF grid 上取聯集]
+    C --> F[CSF mask]
+    E --> G[CSF & not 腦室聯集]
+    F --> G
+    G --> H[voxel count × CSF voxel volume]
+```
+
+---
+
+### 1. 載入與座標標準化
+
+**輸入 mask**:
+
+| 結構 | 標準檔名 | data_ 檔名 |
+|------|----------|------------|
+| CSF | `CSF.nii.gz` | `mask_CSF_<id>.nii.gz` |
+| 左側腦室 | `Ventricle_L.nii.gz` | `mask_Ventricle_L_<id>.nii.gz` |
+| 右側腦室 | `Ventricle_R.nii.gz` | `mask_Ventricle_R_<id>.nii.gz` |
+| 三腦室 | `Third-ventricle.nii.gz` / `Third_ventricle.nii.gz` | `mask_Third-ventricle_<id>.nii.gz` / `mask_Third_ventricle_<id>.nii.gz` |
+| 四腦室 | `Fourth-ventricle.nii.gz` / `Fourth_ventricle.nii.gz` | `mask_Fourth-ventricle_<id>.nii.gz` / `mask_Fourth_ventricle_<id>.nii.gz` |
+
+所有影像都透過統一載入函數拉正到 RAS+，避免不同掃描方向造成座標解讀不一致。
+
+```python
+left_vent, right_vent = load_ventricle_pair(left_path, right_path)
+third_vent = load_3rd_ventricle_image(third_path)
+fourth_vent = load_4th_ventricle_image(fourth_path)
+csf_img = load_csf_image(csf_path)
+```
+
+---
+
+### 2. 為什麼要投影回 CSF grid？
+
+不同 mask 可能因為裁切或分割流程不同而有不同 shape：
+
+```text
+CSF.nii.gz              shape = (512, 512, 34)
+Ventricle_L.nii.gz      shape = (73, 200, 13)
+Third-ventricle.nii.gz  shape = (506, 506, 34)
+```
+
+這些陣列大小不同，不能直接做 `CSF - ventricle`。但每個 NIfTI 影像都有 affine 矩陣，可將 voxel 座標轉換到真實物理空間 (mm)。因此算法會將所有腦室 mask 的非零點依 affine 放回 CSF 的座標格子上。
+
+#### 投影步驟
+
+1. 找出腦室 mask 中所有 `mask > 0` 的 voxel 座標
+2. 用該腦室影像的 affine 將 voxel 座標轉成物理座標
+3. 用 CSF affine 的反矩陣將物理座標轉成 CSF voxel 座標
+4. 使用 nearest-neighbor 四捨五入到最接近的 CSF voxel
+5. 超出 CSF 範圍的點忽略
+6. 產生與 CSF shape 完全相同的腦室 mask
+
+```python
+coords = np.argwhere(ventricle_mask)
+homogeneous = np.column_stack([coords, np.ones(len(coords))])
+physical_coords = (ventricle_img.affine @ homogeneous.T).T[:, :3]
+
+inverse_csf_affine = np.linalg.inv(csf_img.affine)
+csf_voxels = (inverse_csf_affine @ csf_homogeneous.T).T[:, :3]
+csf_indices = np.rint(csf_voxels).astype(int)
+```
+
+**nearest-neighbor 的原因**: mask 是類別資料，只能代表「有」或「沒有」該結構，不應使用線性插值產生 0.2、0.7 這類中間值。
+
+---
+
+### 3. 體積計算方式
+
+此指標使用 **voxel grid / mask voxel count**，不使用 Marching Cubes。
+
+#### 個別體積
+
+CSF 與各腦室的個別體積使用各自 mask 的 voxel 數量乘以各自 voxel volume：
+
+```python
+volume_mm3 = np.count_nonzero(mask > 0) * voxel_x * voxel_y * voxel_z
+```
+
+#### 腦室聯集體積
+
+四個腦室先投影到 CSF grid，再取聯集：
+
+```python
+ventricle_union = left_on_csf | right_on_csf | third_on_csf | fourth_on_csf
+ventricle_union_volume = np.count_nonzero(ventricle_union) * csf_voxel_volume
+```
+
+使用聯集而不是直接相加，可避免不同腦室 mask 若有重疊時被重複扣除。
+
+#### 腦室外 CSF 體積
+
+在 CSF grid 上執行集合扣除：
+
+```python
+csf_minus_ventricle_mask = csf_mask & ~ventricle_union
+extra_ventricular_csf_volume = np.count_nonzero(csf_minus_ventricle_mask) * csf_voxel_volume
+```
+
+---
+
+### 4. 與腦室體積算法的差異
+
+| 指標 | 體積計算方式 | 目的 |
+|------|--------------|------|
+| 腦室體積 / V-SA Ratio | Marching Cubes + 三角網格體積 | 取得較平滑的腦室形狀與表面積 |
+| 腦室外 CSF 體積 | voxel count + CSF grid 集合扣除 | 在 mask 空間中扣除腦室內 CSF |
+
+腦室外 CSF 是集合扣除問題，因此使用 voxel grid 較合理；Marching Cubes 主要用於需要平滑表面或表面積的形狀指標。
 
 ---
 

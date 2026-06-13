@@ -104,6 +104,16 @@ INDICATOR_CONFIGS = {
         'total_ratio_label': 'V/SA 比例 (mm)',
         'footer': 'Volume-to-Surface Ratio Calculator'
     },
+    'csf_minus_ventricle': {
+        'title': '腦室外 CSF 體積批次處理報表',
+        'csf_volume_field': 'csf_volume',
+        'csf_volume_label': 'CSF 體積 (mm³)',
+        'ventricle_union_field': 'ventricle_union_volume',
+        'ventricle_union_label': '腦室聯集體積 (mm³)',
+        'csf_minus_field': 'csf_minus_ventricle_volume',
+        'csf_minus_label': '腦室外 CSF 體積 (mm³)',
+        'footer': 'Extra-ventricular CSF Volume Calculator'
+    },
     'callosal_angle': {
         'title': 'Callosal Angle (胼胝體角) 批次處理報表',
         'angle_field': 'angle',
@@ -228,6 +238,24 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
 
                     f.write(f"| {case_id_display} | {left_volume:.1f} | {right_volume:.1f} | {total_volume:.1f} | {total_ratio:.4f} | {time_str} |\n")
 
+            elif indicator_type == "csf_minus_ventricle":
+                f.write(f"| 案例 ID | {config['csf_volume_label']} | {config['ventricle_union_label']} | {config['csf_minus_label']} | 處理時間 |\n")
+                f.write("|---------|----------------|----------------|----------------|----------|\n")
+
+                for result in successful_results:
+                    case_id = result.get('case_id', 'N/A')
+                    csf_volume = result.get(config['csf_volume_field'], 0)
+                    ventricle_union = result.get(config['ventricle_union_field'], 0)
+                    csf_minus = result.get(config['csf_minus_field'], 0)
+                    time_str = result.get('processing_time', 'N/A')
+
+                    if is_nph_case(result):
+                        case_id_display = f"{case_id} ⚠️ NPH"
+                    else:
+                        case_id_display = case_id
+
+                    f.write(f"| {case_id_display} | {csf_volume:.1f} | {ventricle_union:.1f} | {csf_minus:.1f} | {time_str} |\n")
+
             elif indicator_type == "callosal_angle":
                 f.write(f"| 案例 ID | {config['angle_label']} | 處理時間 |\n")
                 f.write("|---------|---------------|----------|\n")
@@ -311,6 +339,18 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                 f.write(f"| {config['total_volume_label']} | {min(total_volumes):.1f} | {max(total_volumes):.1f} | {sum(total_volumes)/len(total_volumes):.1f} | {sorted(total_volumes)[len(total_volumes)//2]:.1f} |\n")
                 f.write(f"| {config['total_ratio_label']} | {min(total_ratios):.4f} | {max(total_ratios):.4f} | {sum(total_ratios)/len(total_ratios):.4f} | {sorted(total_ratios)[len(total_ratios)//2]:.4f} |\n")
 
+            elif indicator_type == "csf_minus_ventricle":
+                csf_volumes = [r[config['csf_volume_field']] for r in successful_results]
+                ventricle_unions = [r[config['ventricle_union_field']] for r in successful_results]
+                csf_minus_values = [r[config['csf_minus_field']] for r in successful_results]
+
+                f.write("\n### 統計數據（全部案例）\n\n")
+                f.write("| 指標 | 最小值 | 最大值 | 平均值 | 中位數 |\n")
+                f.write("|------|--------|--------|--------|--------|\n")
+                f.write(f"| {config['csf_volume_label']} | {min(csf_volumes):.1f} | {max(csf_volumes):.1f} | {sum(csf_volumes)/len(csf_volumes):.1f} | {sorted(csf_volumes)[len(csf_volumes)//2]:.1f} |\n")
+                f.write(f"| {config['ventricle_union_label']} | {min(ventricle_unions):.1f} | {max(ventricle_unions):.1f} | {sum(ventricle_unions)/len(ventricle_unions):.1f} | {sorted(ventricle_unions)[len(ventricle_unions)//2]:.1f} |\n")
+                f.write(f"| {config['csf_minus_label']} | {min(csf_minus_values):.1f} | {max(csf_minus_values):.1f} | {sum(csf_minus_values)/len(csf_minus_values):.1f} | {sorted(csf_minus_values)[len(csf_minus_values)//2]:.1f} |\n")
+
             elif indicator_type == "callosal_angle":
                 angles = [r[config['angle_field']] for r in successful_results]
                 f.write("\n### 統計數據（全部案例）\n\n")
@@ -359,6 +399,11 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                     f.write("|------|--------|--------|--------|--------|\n")
                     f.write(f"| {config['total_volume_label']} | {min(nph_total_volumes):.1f} | {max(nph_total_volumes):.1f} | {sum(nph_total_volumes)/len(nph_total_volumes):.1f} | {sorted(nph_total_volumes)[len(nph_total_volumes)//2]:.1f} |\n")
                     f.write(f"| {config['total_ratio_label']} | {min(nph_total_ratios):.4f} | {max(nph_total_ratios):.4f} | {sum(nph_total_ratios)/len(nph_total_ratios):.4f} | {sorted(nph_total_ratios)[len(nph_total_ratios)//2]:.4f} |\n")
+                elif indicator_type == "csf_minus_ventricle":
+                    nph_csf_minus = [r[config['csf_minus_field']] for r in nph_results]
+                    f.write("| 指標 | 最小值 | 最大值 | 平均值 | 中位數 |\n")
+                    f.write("|------|--------|--------|--------|--------|\n")
+                    f.write(f"| {config['csf_minus_label']} | {min(nph_csf_minus):.1f} | {max(nph_csf_minus):.1f} | {sum(nph_csf_minus)/len(nph_csf_minus):.1f} | {sorted(nph_csf_minus)[len(nph_csf_minus)//2]:.1f} |\n")
                 elif indicator_type == "callosal_angle":
                     nph_angles = [r[config['angle_field']] for r in nph_results]
                     f.write("| 指標 | 最小值 | 最大值 | 平均值 | 中位數 |\n")
@@ -400,6 +445,11 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                     f.write("|------|--------|--------|--------|--------|\n")
                     f.write(f"| {config['total_volume_label']} | {min(non_nph_total_volumes):.1f} | {max(non_nph_total_volumes):.1f} | {sum(non_nph_total_volumes)/len(non_nph_total_volumes):.1f} | {sorted(non_nph_total_volumes)[len(non_nph_total_volumes)//2]:.1f} |\n")
                     f.write(f"| {config['total_ratio_label']} | {min(non_nph_total_ratios):.4f} | {max(non_nph_total_ratios):.4f} | {sum(non_nph_total_ratios)/len(non_nph_total_ratios):.4f} | {sorted(non_nph_total_ratios)[len(non_nph_total_ratios)//2]:.4f} |\n")
+                elif indicator_type == "csf_minus_ventricle":
+                    non_nph_csf_minus = [r[config['csf_minus_field']] for r in non_nph_results]
+                    f.write("| 指標 | 最小值 | 最大值 | 平均值 | 中位數 |\n")
+                    f.write("|------|--------|--------|--------|--------|\n")
+                    f.write(f"| {config['csf_minus_label']} | {min(non_nph_csf_minus):.1f} | {max(non_nph_csf_minus):.1f} | {sum(non_nph_csf_minus)/len(non_nph_csf_minus):.1f} | {sorted(non_nph_csf_minus)[len(non_nph_csf_minus)//2]:.1f} |\n")
                 elif indicator_type == "callosal_angle":
                     non_nph_angles = [r[config['angle_field']] for r in non_nph_results]
                     f.write("| 指標 | 最小值 | 最大值 | 平均值 | 中位數 |\n")
@@ -456,6 +506,14 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                     ratio_diff = nph_ratio_mean - non_nph_ratio_mean
                     ratio_pct = (ratio_diff / non_nph_ratio_mean) * 100
                     f.write(f"| **{config['total_ratio_label']}** | **{nph_ratio_mean:.4f}** | **{non_nph_ratio_mean:.4f}** | **{ratio_diff:+.4f}** | **{ratio_pct:+.1f}%** |\n")
+                elif indicator_type == "csf_minus_ventricle":
+                    nph_csf_minus = [r[config['csf_minus_field']] for r in nph_results]
+                    non_nph_csf_minus = [r[config['csf_minus_field']] for r in non_nph_results]
+                    nph_mean = sum(nph_csf_minus) / len(nph_csf_minus)
+                    non_nph_mean = sum(non_nph_csf_minus) / len(non_nph_csf_minus)
+                    diff = nph_mean - non_nph_mean
+                    pct = (diff / non_nph_mean) * 100 if non_nph_mean != 0 else 0
+                    f.write(f"| **{config['csf_minus_label']}** | **{nph_mean:.1f}** | **{non_nph_mean:.1f}** | **{diff:+.1f}** | **{pct:+.1f}%** |\n")
                 elif indicator_type == "callosal_angle":
                     nph_angles = [r[config['angle_field']] for r in nph_results]
                     non_nph_angles = [r[config['angle_field']] for r in non_nph_results]
@@ -531,6 +589,16 @@ def generate_markdown_report(results, output_path, total_time, success_count, er
                             rank_note = " (最低)"
 
                         f.write(f"| {case_id} | {total_volume:.1f} | {total_area:.1f} | {total_ratio:.4f} | {i}{rank_note} |\n")
+                elif indicator_type == "csf_minus_ventricle":
+                    f.write(f"| 案例 ID | {config['csf_minus_label']} | 排序 |\n")
+                    f.write("|---------|----------------|------|\n")
+
+                    nph_sorted = sorted(nph_results, key=lambda x: x[config['csf_minus_field']], reverse=True)
+                    for i, result in enumerate(nph_sorted, 1):
+                        case_id = result.get('case_id', 'N/A')
+                        csf_minus = result.get(config['csf_minus_field'], 0)
+                        rank_note = " (最高)" if i == 1 else (" (最低)" if i == len(nph_sorted) else "")
+                        f.write(f"| {case_id} | {csf_minus:.1f} | {i}{rank_note} |\n")
                 elif indicator_type == "callosal_angle":
                     f.write(f"| 案例 ID | {config['angle_label']} | 排序 |\n")
                     f.write("|---------|---------------|------|\n")

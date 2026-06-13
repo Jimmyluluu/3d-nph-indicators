@@ -11,7 +11,8 @@ from model.calculation import (
     calculate_centroid_distance,
     calculate_ventricle_to_cranial_ratio,
     calculate_surface_area,
-    calculate_volume_surface_ratio
+    calculate_volume_surface_ratio,
+    calculate_csf_minus_ventricle,
 )
 from model.evan_analyzer import (
     calculate_3d_evan_index,
@@ -45,21 +46,27 @@ def _find_file_variants(data_path, candidates):
     return None
 
 
-def find_case_files(data_dir, require_original=True, require_falx=False, require_3rd_ventricle=False):
+def find_case_files(data_dir, require_original=True, require_falx=False,
+                    require_3rd_ventricle=False, require_4th_ventricle=False,
+                    require_csf=False):
     """
     尋找案例資料夾中的腦室和原始影像檔案路徑
     
     支援兩種命名模式：
     - 標準命名: Ventricle_L.nii.gz, Ventricle_R.nii.gz, original.nii.gz,
-                falx.nii.gz / Falx.nii.gz, Third_ventricle.nii.gz / Third-ventricle.nii.gz
+                falx.nii.gz / Falx.nii.gz, Third_ventricle.nii.gz / Third-ventricle.nii.gz,
+                Fourth_ventricle.nii.gz / Fourth-ventricle.nii.gz, CSF.nii.gz
     - data_ 命名: mask_Ventricle_L_{num}.nii.gz, mask_Ventricle_R_{num}.nii.gz,
-                  original_{num}.nii.gz, mask_Falx_{num}.nii.gz, mask_Third-ventricle_{num}.nii.gz
+                  original_{num}.nii.gz, mask_Falx_{num}.nii.gz, mask_Third-ventricle_{num}.nii.gz,
+                  mask_Fourth-ventricle_{num}.nii.gz, mask_CSF_{num}.nii.gz
     
     Args:
         data_dir: 資料目錄路徑
         require_original: 是否需要原始影像檔案
         require_falx: 是否需要 Falx 檔案
         require_3rd_ventricle: 是否需要三腦室檔案
+        require_4th_ventricle: 是否需要四腦室檔案
+        require_csf: 是否需要 CSF 檔案
         
     Returns:
         dict: 包含檔案路徑的字典
@@ -68,6 +75,8 @@ def find_case_files(data_dir, require_original=True, require_falx=False, require
             - 'original_path': 原始影像檔案路徑 (如果 require_original=True)
             - 'falx_path': Falx 檔案路徑 (如果 require_falx=True)
             - 'third_vent_path': 三腦室檔案路徑 (如果 require_3rd_ventricle=True)
+            - 'fourth_vent_path': 四腦室檔案路徑 (如果 require_4th_ventricle=True)
+            - 'csf_path': CSF 檔案路徑 (如果 require_csf=True)
             
     Raises:
         FileNotFoundError: 如果找不到必要的檔案
@@ -91,6 +100,18 @@ def find_case_files(data_dir, require_original=True, require_falx=False, require
         "Third-Ventricle.nii.gz",
     ])
 
+    fourth_vent_path = _find_file_variants(data_path, [
+        "Fourth_ventricle.nii.gz",
+        "Fourth-ventricle.nii.gz",
+        "Fourth_Ventricle.nii.gz",
+        "Fourth-Ventricle.nii.gz",
+    ])
+
+    csf_path = _find_file_variants(data_path, [
+        "CSF.nii.gz",
+        "csf.nii.gz",
+    ])
+
     # ── data_ 開頭的命名模式 ──
     if case_name.startswith('data_'):
         data_num = case_name.replace('data_', '')
@@ -107,6 +128,16 @@ def find_case_files(data_dir, require_original=True, require_falx=False, require
             f"mask_Third-Ventricle_{data_num}.nii.gz",
             f"mask_Third_Ventricle_{data_num}.nii.gz",
         ])
+        fourth_vent_path_alt = _find_file_variants(data_path, [
+            f"mask_Fourth-ventricle_{data_num}.nii.gz",
+            f"mask_Fourth_ventricle_{data_num}.nii.gz",
+            f"mask_Fourth-Ventricle_{data_num}.nii.gz",
+            f"mask_Fourth_Ventricle_{data_num}.nii.gz",
+        ])
+        csf_path_alt = _find_file_variants(data_path, [
+            f"mask_CSF_{data_num}.nii.gz",
+            f"mask_csf_{data_num}.nii.gz",
+        ])
 
         if left_path_alt.exists():
             left_path = left_path_alt
@@ -116,6 +147,10 @@ def find_case_files(data_dir, require_original=True, require_falx=False, require
                 falx_path = falx_path_alt
             if third_vent_path_alt:
                 third_vent_path = third_vent_path_alt
+            if fourth_vent_path_alt:
+                fourth_vent_path = fourth_vent_path_alt
+            if csf_path_alt:
+                csf_path = csf_path_alt
 
     # ── 驗證必要檔案存在 ──
     if not left_path.exists() or not right_path.exists():
@@ -130,6 +165,12 @@ def find_case_files(data_dir, require_original=True, require_falx=False, require
     if require_3rd_ventricle and (third_vent_path is None or not third_vent_path.exists()):
         raise FileNotFoundError(f"在 {data_dir} 中找不到三腦室檔案")
 
+    if require_4th_ventricle and (fourth_vent_path is None or not fourth_vent_path.exists()):
+        raise FileNotFoundError(f"在 {data_dir} 中找不到四腦室檔案")
+
+    if require_csf and (csf_path is None or not csf_path.exists()):
+        raise FileNotFoundError(f"在 {data_dir} 中找不到 CSF 檔案")
+
     result = {
         'left_path': left_path,
         'right_path': right_path,
@@ -143,6 +184,12 @@ def find_case_files(data_dir, require_original=True, require_falx=False, require
 
     if require_3rd_ventricle:
         result['third_vent_path'] = third_vent_path
+
+    if require_4th_ventricle:
+        result['fourth_vent_path'] = fourth_vent_path
+
+    if require_csf:
+        result['csf_path'] = csf_path
 
     return result
 
@@ -416,6 +463,50 @@ def process_case_volume_surface_ratio(data_dir, output_image_path, show_plot=Fal
             'right_surface_area': ratio_data['right_surface_area'],
             'total_surface_area': ratio_data['total_surface_area'],
             'total_ratio': ratio_data['total_ratio']
+        }
+
+    except Exception as e:
+        return {
+            'status': 'error',
+            'error_message': str(e),
+            'error_type': type(e).__name__
+        }
+
+
+def process_case_csf_minus_ventricle(data_dir, output_image_path, show_plot=False, verbose=True):
+    """處理單一案例 - 腦室外 CSF 體積。"""
+    try:
+        files = find_case_files(
+            data_dir,
+            require_original=False,
+            require_3rd_ventricle=True,
+            require_4th_ventricle=True,
+            require_csf=True,
+        )
+
+        left_vent, right_vent = load_ventricle_pair(
+            str(files['left_path']), str(files['right_path']), verbose=verbose
+        )
+
+        from model.calculation import load_3rd_ventricle_image, load_4th_ventricle_image, load_csf_image
+        third_vent = load_3rd_ventricle_image(str(files['third_vent_path']), verbose=verbose)
+        fourth_vent = load_4th_ventricle_image(str(files['fourth_vent_path']), verbose=verbose)
+        csf_img = load_csf_image(str(files['csf_path']), verbose=verbose)
+
+        csf_data = calculate_csf_minus_ventricle(
+            csf_img, left_vent, right_vent, third_vent, fourth_vent, verbose=verbose
+        )
+
+        return {
+            'status': 'success',
+            'csf_volume': csf_data['csf_volume'],
+            'left_ventricle_volume': csf_data['left_ventricle_volume'],
+            'right_ventricle_volume': csf_data['right_ventricle_volume'],
+            'third_ventricle_volume': csf_data['third_ventricle_volume'],
+            'fourth_ventricle_volume': csf_data['fourth_ventricle_volume'],
+            'ventricle_union_volume': csf_data['ventricle_union_volume'],
+            'csf_minus_ventricle_volume': csf_data['csf_minus_ventricle_volume'],
+            'voxel_size': list(csf_data['voxel_size'])
         }
 
     except Exception as e:

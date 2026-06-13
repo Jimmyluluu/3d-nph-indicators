@@ -9,7 +9,7 @@ import nibabel as nib
 from model.image_processing import get_image_data, get_voxel_size, reorient_image, extract_surface_mesh
 
 # 從新模組導入體積表面積計算函數
-from model.cal_volume_surface import calculate_surface_area, calculate_volume_smooth, calculate_volume_surface_ratio
+from model.cal_volume_surface import calculate_surface_area, calculate_volume_smooth, calculate_volume_surface_ratio, calculate_csf_minus_ventricle
 
 def load_ventricle_pair(left_path, right_path, verbose=True):
     """
@@ -115,6 +115,46 @@ def load_3rd_ventricle_image(third_vent_path, verbose=True):
         print(f"    形狀: {third_vent_img.shape}, 體素: {third_vent_img.header.get_zooms()[:3]}")
 
     return third_vent_img
+
+
+def load_4th_ventricle_image(fourth_vent_path, verbose=True):
+    """
+    載入四腦室 mask 並自動拉正到 RAS+ 方向
+
+    Args:
+        fourth_vent_path: 四腦室 mask 檔案路徑
+        verbose: 是否顯示載入資訊
+
+    Returns:
+        nibabel.Nifti1Image: 已拉正到 RAS+ 方向的影像物件
+    """
+    fourth_vent_img, orig_ornt, new_ornt = reorient_image(fourth_vent_path, verbose=False)
+
+    if verbose:
+        print(f"  四腦室影像已載入: {fourth_vent_path}")
+        print(f"    形狀: {fourth_vent_img.shape}, 體素: {fourth_vent_img.header.get_zooms()[:3]}")
+
+    return fourth_vent_img
+
+
+def load_csf_image(csf_path, verbose=True):
+    """
+    載入 CSF mask 並自動拉正到 RAS+ 方向
+
+    Args:
+        csf_path: CSF mask 檔案路徑
+        verbose: 是否顯示載入資訊
+
+    Returns:
+        nibabel.Nifti1Image: 已拉正到 RAS+ 方向的影像物件
+    """
+    csf_img, orig_ornt, new_ornt = reorient_image(csf_path, verbose=False)
+
+    if verbose:
+        print(f"  CSF 影像已載入: {csf_path}")
+        print(f"    形狀: {csf_img.shape}, 體素: {csf_img.header.get_zooms()[:3]}")
+
+    return csf_img
 
 
 

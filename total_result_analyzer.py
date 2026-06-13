@@ -10,6 +10,7 @@
   - Surface Area（從 V/SA Ratio 與 Volume 反推）
   - Volume / Surface Area Ratio
   - Callosal Angle
+  - Extra-ventricular CSF Volume（腦室外水）
 """
 
 import re
@@ -21,6 +22,14 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve, auc
+
+plt.rcParams['font.sans-serif'] = [
+    'PingFang TC',
+    'Heiti TC',
+    'Arial Unicode MS',
+    'DejaVu Sans',
+]
+plt.rcParams['axes.unicode_minus'] = False
 
 # 確保可以 import model/
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -43,6 +52,7 @@ INDICATORS_TO_LOAD = [
     ('surface_area_derived', _VS_PATH),   # 特殊：反推 surface area = total_volume / ratio
     ('volume_surface_ratio', _VS_PATH),
     ('callosal_angle',       os.path.join(RESULT_DIR, 'callosal_angle', 'results_summary.md')),
+    ('csf_minus_ventricle',  os.path.join(RESULT_DIR, 'csf_minus_ventricle', 'results_summary.md')),
 ]
 
 # 各指標顯示設定
@@ -53,6 +63,7 @@ INDICATOR_STYLES = {
     'surface_area_derived': {'label': 'Surface Area',  'color': '#8b5cf6'},
     'volume_surface_ratio': {'label': 'V/SA Ratio',    'color': '#10b981'},
     'callosal_angle':       {'label': 'Callosal Angle','color': '#ec4899'},
+    'csf_minus_ventricle':  {'label': 'Extra-ventricular CSF', 'color': '#06b6d4'},
 }
 
 
@@ -231,7 +242,7 @@ def generate_combined_roc(output_path: str | None = None) -> str:
     ax.set_ylabel('True Positive Rate  (Sensitivity)', fontsize=13)
     ax.set_title(
         'Combined ROC Curves — NPH Indicators\n'
-        'ALVI  ·  Evan Index  ·  Volume  ·  Surface Area  ·  V/SA Ratio  ·  Callosal Angle',
+        'ALVI  ·  Evan Index  ·  Volume  ·  Surface Area  ·  V/SA Ratio  ·  Callosal Angle  ·  Extra-ventricular CSF',
         fontsize=14, fontweight='bold', pad=14,
     )
     ax.legend(loc='lower right', fontsize=11, framealpha=0.92)

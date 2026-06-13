@@ -7,7 +7,7 @@
 import time
 from pathlib import Path
 from processors.logger import ProcessLogger
-from processors.case_processor import process_case_indicator_ratio, process_case_evan_index, process_case_surface_area, process_case_volume_surface_ratio, process_case_alvi
+from processors.case_processor import process_case_indicator_ratio, process_case_evan_index, process_case_surface_area, process_case_volume_surface_ratio, process_case_alvi, process_case_csf_minus_ventricle
 from model.report_generator import generate_markdown_report, INDICATOR_CONFIGS, format_time
 from model.result_analyzer import create_analyzer
 import datetime
@@ -34,8 +34,9 @@ def scan_data_directory(base_dir, indicator_type, skip_not_ok=True):
     # 取得所有子目錄
     all_dirs = [d for d in base_path.iterdir() if d.is_dir()]
     
-    requires_original = indicator_type not in ['surface_area', 'volume_surface_ratio']
+    requires_original = indicator_type not in ['surface_area', 'volume_surface_ratio', 'csf_minus_ventricle']
     requires_3rd_ventricle = indicator_type in ['callosal_angle', 'callosal_area']
+    requires_csf_ventricles = indicator_type == 'csf_minus_ventricle'
 
     # 過濾掉隱藏檔案（._ 開頭）和 _not_ok 標記的資料夾
     valid_dirs = []
@@ -62,6 +63,18 @@ def scan_data_directory(base_dir, indicator_type, skip_not_ok=True):
             ])
             has_falx = any((d / n).exists() for n in ["falx.nii.gz", "Falx.nii.gz"])
             p1_ok = has_3rd and has_falx
+
+        if p1_ok and requires_csf_ventricles:
+            has_3rd = any((d / n).exists() for n in [
+                "Third_ventricle.nii.gz", "Third-ventricle.nii.gz",
+                "Third_Ventricle.nii.gz", "Third-Ventricle.nii.gz",
+            ])
+            has_4th = any((d / n).exists() for n in [
+                "Fourth_ventricle.nii.gz", "Fourth-ventricle.nii.gz",
+                "Fourth_Ventricle.nii.gz", "Fourth-Ventricle.nii.gz",
+            ])
+            has_csf = any((d / n).exists() for n in ["CSF.nii.gz", "csf.nii.gz"])
+            p1_ok = has_3rd and has_4th and has_csf
 
         if p1_ok:
             valid_dirs.append(d)
@@ -90,6 +103,25 @@ def scan_data_directory(base_dir, indicator_type, skip_not_ok=True):
                     f"mask_falx_{data_num}.nii.gz",
                 ])
                 p2_ok = has_3rd_p2 and has_falx_p2
+
+            if p2_ok and requires_csf_ventricles:
+                has_3rd_p2 = any((d / n).exists() for n in [
+                    f"mask_Third-ventricle_{data_num}.nii.gz",
+                    f"mask_Third_ventricle_{data_num}.nii.gz",
+                    f"mask_Third-Ventricle_{data_num}.nii.gz",
+                    f"mask_Third_Ventricle_{data_num}.nii.gz",
+                ])
+                has_4th_p2 = any((d / n).exists() for n in [
+                    f"mask_Fourth-ventricle_{data_num}.nii.gz",
+                    f"mask_Fourth_ventricle_{data_num}.nii.gz",
+                    f"mask_Fourth-Ventricle_{data_num}.nii.gz",
+                    f"mask_Fourth_Ventricle_{data_num}.nii.gz",
+                ])
+                has_csf_p2 = any((d / n).exists() for n in [
+                    f"mask_CSF_{data_num}.nii.gz",
+                    f"mask_csf_{data_num}.nii.gz",
+                ])
+                p2_ok = has_3rd_p2 and has_4th_p2 and has_csf_p2
 
             if p2_ok:
                 valid_dirs.append(d)
@@ -173,6 +205,9 @@ def batch_process(data_dir=None, indicator_type="centroid_ratio", skip_not_ok=Tr
     elif indicator_type == "volume_surface_ratio":
         process_func = lambda data_dir, output_path, show_plot=False, verbose=True: process_case_volume_surface_ratio(data_dir, output_path, show_plot=show_plot, verbose=verbose)
         indicator_name = "體積與表面積比例"
+    elif indicator_type == "csf_minus_ventricle":
+        process_func = lambda data_dir, output_path, show_plot=False, verbose=True: process_case_csf_minus_ventricle(data_dir, output_path, show_plot=show_plot, verbose=verbose)
+        indicator_name = "腦室外 CSF 體積"
     elif indicator_type == "alvi":
         process_func = lambda data_dir, output_path, show_plot=False, verbose=True: process_case_alvi(data_dir, output_path, show_plot=show_plot, verbose=verbose)
         indicator_name = "ALVI (Anteroposterior Lateral Ventricle Index)"
@@ -293,6 +328,10 @@ def batch_process(data_dir=None, indicator_type="centroid_ratio", skip_not_ok=Tr
                         logger.info(f"     右腦室表面積: {result['right_surface_area']:.2f} mm²")
                         logger.info(f"     總表面積: {result['total_surface_area']:.2f} mm²")
                         logger.info(f"     V/SA 比例: {result['total_ratio']:.4f} mm")
+                    elif indicator_type == "csf_minus_ventricle":
+                        logger.info(f"     CSF 體積: {result['csf_volume']:.2f} mm³")
+                        logger.info(f"     腦室聯集體積: {result['ventricle_union_volume']:.2f} mm³")
+                        logger.info(f"     腦室外 CSF 體積: {result['csf_minus_ventricle_volume']:.2f} mm³")
                     elif indicator_type == "alvi":
                         logger.info(f"     腦室前後徑: {result['ventricle_ap_diameter_mm']:.2f} mm")
                         logger.info(f"     顱骨前後徑: {result['skull_ap_diameter_mm']:.2f} mm")
@@ -422,6 +461,27 @@ def batch_process(data_dir=None, indicator_type="centroid_ratio", skip_not_ok=Tr
                 sa_analyzer.generate_roc_curve(str(sa_roc_path))
                 logger.success(f"表面積 ROC 曲線已生成: {sa_roc_path}")
                 
+            except Exception as e:
+                logger.error(f"進階分析執行失敗: {str(e)}", e)
+
+        # 如果是腦室外 CSF 體積，自動執行進階分析與 ROC 曲線
+        if indicator_type == "csf_minus_ventricle":
+            try:
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+
+                logger.info("\n執行腦室外 CSF 體積進階分析...")
+                analyzer = create_analyzer('csf_minus_ventricle', str(md_path))
+
+                csf_analysis_filename = f'csf_minus_ventricle_analysis_{timestamp}.md'
+                csf_analysis_path = output_path / csf_analysis_filename
+                analyzer.generate_report(str(csf_analysis_path))
+                logger.success(f"腦室外 CSF 體積分析報告已生成: {csf_analysis_path}")
+
+                csf_roc_filename = f'csf_minus_ventricle_roc_{timestamp}.png'
+                csf_roc_path = output_path / csf_roc_filename
+                analyzer.generate_roc_curve(str(csf_roc_path))
+                logger.success(f"腦室外 CSF 體積 ROC 曲線已生成: {csf_roc_path}")
+
             except Exception as e:
                 logger.error(f"進階分析執行失敗: {str(e)}", e)
 
