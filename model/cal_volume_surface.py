@@ -8,6 +8,27 @@ import numpy as np
 from model.image_processing import extract_surface_mesh, get_image_data, get_voxel_size
 
 
+def calculate_mask_volume(image_obj):
+    """
+    以 mask 非零體素數計算體積。
+
+    Args:
+        image_obj: nibabel 影像物件
+
+    Returns:
+        float: 體積 (mm³)
+    """
+    image_data = get_image_data(image_obj)
+    if image_data is None:
+        raise ValueError("影像資料為空")
+
+    voxel_volume = abs(np.linalg.det(image_obj.affine[:3, :3]))
+    if voxel_volume == 0:
+        raise ValueError("影像 affine 的 voxel volume 為 0")
+
+    return float(np.count_nonzero(image_data > 0) * voxel_volume)
+
+
 def calculate_surface_area(left_ventricle, right_ventricle, verbose=True):
     """
     計算左右腦室的表面積（純計算，不包含視覺化資料）
@@ -48,7 +69,7 @@ def calculate_surface_area(left_ventricle, right_ventricle, verbose=True):
     # 輸出表面積計算總結（使用 processors.printers）
     if verbose:
         from processors.printers import print_surface_area_summary
-        print_surface_area_summary(left_area, right_area, total_surface_area, verbose)
+        print_surface_area_summary(left_area, right_area, total_surface_area, verbose) # type: ignore
 
     return {
         'left_surface_area': left_area,
@@ -59,36 +80,24 @@ def calculate_surface_area(left_ventricle, right_ventricle, verbose=True):
 
 def calculate_volume_smooth(image_obj, verbose=True):
     """
-    使用 Marching Cubes 演算法計算平滑體積（基於三角網格）
+    使用 mask 非零體素數計算體積。
+
+    保留函數名稱以維持既有呼叫端相容；體積不再使用 Marching Cubes mesh，
+    避免有向四面體公式受世界座標原點與 mesh 面方向影響。
 
     Args:
         image_obj: nibabel 影像物件
         verbose (bool): 是否顯示計算過程資訊
 
     Returns:
-        float: 平滑體積 (mm³)
+        float: 體積 (mm³)
     """
     # 輸出體積計算開始資訊（使用 processors.printers）
     if verbose:
         from processors.printers import print_volume_calculation
         print_volume_calculation(None, verbose=False)  # 先輸出開始資訊
 
-    # 使用統一的表面提取函數 (與表面積計算相同)
-    mesh_result = extract_surface_mesh(image_obj, level=0.5, verbose=False)
-
-    # 取得物理座標的頂點和面
-    vertices_physical = mesh_result['vertices_physical']
-    faces = mesh_result['faces']
-
-    # 基於三角網格計算體積
-    # 使用公式：V = (1/6) * Σ((v1 × v2) · v3) 對於每個三角形
-    volume = 0.0
-    for face in faces:
-        v1, v2, v3 = vertices_physical[face[0]], vertices_physical[face[1]], vertices_physical[face[2]]
-        # 計算三角形面積並投影到原點形成四面體體積
-        cross_product = np.cross(v2 - v1, v3 - v1)
-        triangle_volume = np.abs(np.dot(cross_product, v1)) / 6.0
-        volume += triangle_volume
+    volume = calculate_mask_volume(image_obj)
 
     # 輸出體積計算結果（使用 processors.printers）
     if verbose:
@@ -111,7 +120,6 @@ def calculate_volume_surface_ratio(left_ventricle, right_ventricle, verbose=True
         dict: 包含體積、表面積和比例計算結果的字典
     """
     from skimage.measure import mesh_surface_area
-    from model.image_processing import get_image_data
 
     # 輸出計算開始資訊（使用 processors.printers）
     if verbose:
@@ -141,13 +149,8 @@ def calculate_volume_surface_ratio(left_ventricle, right_ventricle, verbose=True
         if len(vertices_physical) == 0 or len(faces) == 0:
             raise ValueError(f"{name} 無法提取有效的表面網格")
 
-        # 計算平滑體積（基於物理座標網格，單位: mm³）
-        volume = 0.0
-        for face in faces:
-            v1, v2, v3 = vertices_physical[face[0]], vertices_physical[face[1]], vertices_physical[face[2]]
-            cross_product = np.cross(v2 - v1, v3 - v1)
-            triangle_volume = np.abs(np.dot(cross_product, v1)) / 6.0
-            volume += triangle_volume
+        # 體積直接使用 mask voxel count，避免 mesh signed volume 的原點依賴。
+        volume = calculate_mask_volume(image_obj)
 
         # 計算表面積（基於物理座標網格，單位: mm²）
         surface_area = mesh_surface_area(vertices_physical, faces)

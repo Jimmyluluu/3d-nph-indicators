@@ -466,7 +466,7 @@ angle = np.degrees(np.arccos(dot_product))
 
 ### 💡 白話文總結
 
-> **「用 Marching Cubes 把腦室 mask 轉換成三角網格，再把每個三角形與原點組成的四面體體積全部加起來，即得到腦室的平滑體積。」**
+> **「體積直接數 mask 裡有多少個腦室體素，再乘上單一體素的真實體積；表面積才用 Marching Cubes 把 mask 轉成三角網格後計算。最後用總體積除以總表面積得到 V/SA 比例。」**
 
 ---
 
@@ -474,21 +474,54 @@ angle = np.degrees(np.arccos(dot_product))
 
 ```mermaid
 flowchart TD
-    A[載入左右腦室 mask] --> B[Marching Cubes 提取表面網格]
-    B --> C[取得物理座標頂點與三角面]
-    C --> D[計算各三角形的有向四面體體積]
-    D --> E[加總得到平滑體積]
-    C --> F[mesh_surface_area 計算表面積]
-    E --> G[左右體積相加 = 總體積]
-    F --> G
-    G --> H[總體積 / 總表面積 = 體積表面積比]
+    A[載入左右腦室 mask] --> B[計算 mask 非零體素數]
+    B --> C[voxel count × voxel volume = 單側體積]
+    A --> D[Marching Cubes 提取表面網格]
+    D --> E[affine 轉換為物理座標頂點]
+    E --> F[mesh_surface_area 計算單側表面積]
+    C --> G[左右體積相加 = 總體積]
+    F --> H[左右表面積相加 = 總表面積]
+    G --> I[總體積 / 總表面積 = V/SA 比例]
+    H --> I
 ```
 
 ---
 
-### 1. Marching Cubes 表面提取
+### 1. 體積計算（mask voxel count）
 
-**目的**: 將體素化的腦室 mask 轉換為連續的三角網格，消除階梯狀邊界帶來的誤差。
+**目的**: 對 segmentation mask 計算實際佔據體積，單位明確為 mm³，且不受物件離世界座標原點距離、mesh 是否封閉、三角面方向是否一致影響。
+
+**公式**:
+
+$$V_{mask} = N_{mask} \times V_{voxel}$$
+
+其中：
+
+- $N_{mask}$：mask 中非零體素數量
+- $V_{voxel}$：單一體素體積，來自 affine 線性部分的 determinant
+
+$$V_{voxel} = |\det(A_{3 \times 3})|$$
+
+**步驟**:
+
+1. 使用 `get_image_data()` 取得已拉正到 RAS+ 的 mask 資料
+2. 以 `image_data > 0` 判定有效腦室體素
+3. 從 `image_obj.affine[:3, :3]` 計算單一體素體積
+4. 非零體素數乘上體素體積，得到單側腦室體積
+
+```python
+def calculate_mask_volume(image_obj):
+    image_data = get_image_data(image_obj)
+    voxel_volume = abs(np.linalg.det(image_obj.affine[:3, :3]))
+    volume = np.count_nonzero(image_data > 0) * voxel_volume
+    return float(volume)
+```
+
+---
+
+### 2. Marching Cubes 表面提取
+
+**目的**: 將體素化的腦室 mask 轉換為連續的三角網格，用於表面積計算與 3D 視覺化。
 
 **方法**:
 1. 設定等值面閾值 `level=0.5`（0 = 背景，1 = 腦室）
@@ -502,39 +535,6 @@ mesh_result = extract_surface_mesh(image_obj, level=0.5, verbose=False)
 
 vertices_physical = mesh_result['vertices_physical']  # 物理座標頂點 (mm)
 faces = mesh_result['faces']                          # 三角面索引
-```
-
----
-
-### 2. 體積計算（有向四面體法）
-
-**原理**: 對於一個封閉的三角網格，可以把每個三角面片與座標原點組成一個有向四面體，有向體積的總和即為封閉網格的體積。
-
-**公式推導**:
-
-對每個三角面 $(v_1, v_2, v_3)$：
-
-$$V_{\text{tetra}} = \frac{1}{6} \left| (v_2 - v_1) \times (v_3 - v_1) \cdot v_1 \right|$$
-
-總體積：
-
-$$V_{\text{total}} = \sum_{\text{face}} V_{\text{tetra}}$$
-
-**步驟**:
-
-1. 對每個三角面取得三個頂點的物理座標 $v_1, v_2, v_3$
-2. 計算兩條邊向量的**叉積** (Cross Product)：`(v2 - v1) × (v3 - v1)`
-3. 與 $v_1$ 做**點積** (Dot Product) 再除以 6，得到四面體有向體積
-4. 取絕對值後累加所有三角面的體積
-
-```python
-# 有向四面體體積計算
-volume = 0.0
-for face in faces:
-    v1, v2, v3 = vertices_physical[face[0]], vertices_physical[face[1]], vertices_physical[face[2]]
-    cross_product = np.cross(v2 - v1, v3 - v1)
-    triangle_volume = np.abs(np.dot(cross_product, v1)) / 6.0
-    volume += triangle_volume
 ```
 
 ---
@@ -555,11 +555,29 @@ surface_area = mesh_surface_area(vertices_physical, faces)  # 單位: mm²
 
 **目的**: 反映腦室形狀的緊密程度，球形體積表面積比最大，細長或不規則形狀比值較小。
 
+**計算方法**:
+
+1. 分別計算左、右腦室 mask 體積
+2. 分別用 Marching Cubes mesh 計算左、右腦室表面積
+3. 左右體積相加為總體積，左右表面積相加為總表面積
+4. 總體積除以總表面積得到 V/SA 比例，單位為 mm
+
+**公式**:
+
+$$V_{total} = V_{left} + V_{right}$$
+
+$$A_{total} = A_{left} + A_{right}$$
+
+$$VSA = \frac{V_{total}}{A_{total}}$$
+
 ```python
 # 左右腦室加總後計算比例
-total_volume = left_volume + right_volume          # mm³
+left_volume = calculate_mask_volume(left_ventricle)    # mm³
+right_volume = calculate_mask_volume(right_ventricle)  # mm³
+total_volume = left_volume + right_volume              # mm³
+
 total_surface_area = left_surface_area + right_surface_area  # mm²
-total_ratio = total_volume / total_surface_area    # mm
+total_ratio = total_volume / total_surface_area          # mm
 ```
 
 ---
@@ -698,10 +716,10 @@ extra_ventricular_csf_volume = np.count_nonzero(csf_minus_ventricle_mask) * csf_
 
 | 指標 | 體積計算方式 | 目的 |
 |------|--------------|------|
-| 腦室體積 / V-SA Ratio | Marching Cubes + 三角網格體積 | 取得較平滑的腦室形狀與表面積 |
+| 腦室體積 / V-SA Ratio | voxel count × voxel volume；表面積另用 Marching Cubes | 取得穩定的 mask 體積，並搭配平滑表面積計算形狀比例 |
 | 腦室外 CSF 體積 | voxel count + CSF grid 集合扣除 | 在 mask 空間中扣除腦室內 CSF |
 
-腦室外 CSF 是集合扣除問題，因此使用 voxel grid 較合理；Marching Cubes 主要用於需要平滑表面或表面積的形狀指標。
+腦室體積與腦室外 CSF 體積都屬於 mask 佔據體積，因此使用 voxel count 較穩定；Marching Cubes 主要用於需要平滑表面或表面積的形狀指標。
 
 ---
 
